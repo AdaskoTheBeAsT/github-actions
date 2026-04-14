@@ -1,0 +1,37 @@
+name: Setup .NET SDKs
+description: Install one or more .NET SDK versions and optionally show environment info.
+
+inputs:
+  dotnet_versions:
+    description: Comma-separated list of one or more .NET SDK versions to install
+    required: false
+  use_global_json:
+    description: When 'true', also install the SDK version from the root global.json
+    required: false
+    default: "false"
+  show_info:
+    description: When 'true', run 'dotnet --info' after installation
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve .NET SDK versions
+      id: resolve_versions
+      shell: pwsh
+      run: |
+        & "${{ github.action_path }}/resolve-dotnet-sdk-versions.ps1" `
+          -DotnetVersions "${{ inputs.dotnet_versions }}" `
+          -UseGlobalJson "${{ inputs.use_global_json }}"
+
+    - name: Setup .NET SDKs
+      uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5
+      with:
+        dotnet-version: ${{ steps.resolve_versions.outputs.versions }}
+        global-json-file: ${{ steps.resolve_versions.outputs.global_json_file }}
+
+    - name: Show .NET environment info
+      if: ${{ fromJSON(inputs.show_info) }}
+      shell: pwsh
+      run: dotnet --info

@@ -1,0 +1,30 @@
+name: Set Directory.Build.props Version from Tag
+description: Writes the tag version (optionally stripping a leading v) into <Version> in the root Directory.Build.props.
+inputs:
+  tag:
+    description: Full git tag name (e.g. v1.2.3 or 1.2.3-beta+build)
+    required: true
+  strip_v_prefix:
+    description: Strip leading 'v' or 'V' when present (v1.2.3 -> 1.2.3)
+    required: false
+    default: "true"
+  fail_if_not_semver:
+    description: Fail the action if the resulting tag is not semver-like
+    required: false
+    default: "false"
+outputs:
+  version:
+    description: The version value written to the root Directory.Build.props
+    value: ${{ steps.write_version.outputs.version }}
+runs:
+  using: composite
+  steps:
+    - name: Write version from tag
+      id: write_version
+      shell: pwsh
+      working-directory: ${{ github.workspace }}
+      run: |
+        & "${{ github.action_path }}/set-version.ps1" `
+          -Tag "${{ inputs.tag }}" `
+          -StripVPrefix "${{ inputs.strip_v_prefix }}" `
+          -FailIfNotSemver "${{ inputs.fail_if_not_semver }}"

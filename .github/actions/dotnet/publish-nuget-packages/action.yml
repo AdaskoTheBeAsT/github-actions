@@ -1,0 +1,26 @@
+name: Publish NuGet Packages
+description: Publish generated NuGet packages while skipping symbol packages.
+
+inputs:
+  package_output_directory:
+    description: Directory containing generated NuGet packages
+    required: false
+    default: artifacts/nuget
+  nuget_source_url:
+    description: NuGet feed URL
+    required: true
+  nuget_api_key:
+    description: NuGet API key
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Publish NuGet packages
+      shell: pwsh
+      working-directory: ${{ github.workspace }}
+      run: |
+        & "${{ github.action_path }}/publish-nuget-packages.ps1" `
+          -PackageOutputDirectory "${{ inputs.package_output_directory }}" `
+          -NugetSourceUrl "${{ inputs.nuget_source_url }}" `
+          -NugetApiKey "${{ inputs.nuget_api_key }}"

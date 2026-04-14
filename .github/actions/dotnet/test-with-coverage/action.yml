@@ -1,0 +1,37 @@
+name: Test with Coverage
+description: Run dotnet test wrapped by dotnet-coverage.
+
+inputs:
+  solution_name:
+    description: Path to the solution file to test
+    required: true
+  coverage_settings_file:
+    description: Path to coverage.settings.xml
+    required: false
+    default: coverage.settings.xml
+  configuration:
+    description: Build configuration used by dotnet test
+    required: false
+    default: Debug
+  results_directory:
+    description: Directory where test results are written
+    required: false
+    default: TestResults
+  coverage_output_file:
+    description: Coverage output file path
+    required: false
+    default: coverage.xml
+
+runs:
+  using: composite
+  steps:
+    - name: Run tests with coverage
+      shell: pwsh
+      working-directory: ${{ github.workspace }}
+      run: |
+        & "${{ github.action_path }}/test-with-coverage.ps1" `
+          -SolutionName "${{ inputs.solution_name }}" `
+          -CoverageSettingsFile "${{ inputs.coverage_settings_file }}" `
+          -Configuration "${{ inputs.configuration }}" `
+          -ResultsDirectory "${{ inputs.results_directory }}" `
+          -CoverageOutputFile "${{ inputs.coverage_output_file }}"

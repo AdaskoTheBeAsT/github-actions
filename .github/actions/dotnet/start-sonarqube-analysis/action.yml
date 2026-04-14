@@ -1,0 +1,89 @@
+name: Start Sonar Analysis
+description: Start SonarCloud or SonarQube analysis for pull requests, branch builds, and tag builds.
+
+inputs:
+  sonar_provider:
+    description: Sonar provider to use, either sonarcloud or sonarqube
+    required: false
+    default: sonarcloud
+  project_key:
+    description: Sonar project key
+    required: true
+  sonar_organization:
+    description: SonarCloud organization; required when sonar_provider is sonarcloud
+    required: false
+    default: ""
+  sonar_token:
+    description: Sonar authentication token
+    required: true
+  sonar_host_url:
+    description: Sonar server URL
+    required: true
+  settings_file:
+    description: Path to SonarQube.Analysis.xml
+    required: false
+    default: SonarQube.Analysis.xml
+  run_resharper_inspectcode:
+    description: When true, include the ReSharper InspectCode XML report in Sonar analysis
+    required: false
+    default: "false"
+  run_resharper_inspectcode:
+    description: When true, include the ReSharper InspectCode report in Sonar analysis
+    required: false
+    default: "false"
+  resharper_report_path:
+    description: Path to the ReSharper InspectCode XML report
+    required: false
+    default: ""
+  event_name:
+    description: GitHub event name
+    required: true
+  git_ref:
+    description: Full Git ref such as refs/heads/main or refs/tags/v1.2.3
+    required: false
+    default: ""
+  ref_name:
+    description: Git ref name such as main or v1.2.3
+    required: false
+    default: ""
+  branch_name:
+    description: Branch name used for non-pull-request analysis
+    required: false
+    default: ""
+  pull_request_key:
+    description: Pull request number
+    required: false
+    default: ""
+  pull_request_branch:
+    description: Pull request source branch
+    required: false
+    default: ""
+  pull_request_base:
+    description: Pull request target branch
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Start Sonar analysis
+      shell: pwsh
+      working-directory: ${{ github.workspace }}
+      run: |
+        & "${{ github.action_path }}/start-sonarqube-analysis.ps1" `
+          -SonarProvider "${{ inputs.sonar_provider }}" `
+          -ProjectKey "${{ inputs.project_key }}" `
+          -SonarOrganization "${{ inputs.sonar_organization }}" `
+          -SonarToken "${{ inputs.sonar_token }}" `
+          -SonarHostUrl "${{ inputs.sonar_host_url }}" `
+          -SettingsFile "${{ inputs.settings_file }}" `
+          -RunReSharperInspectCode "${{ inputs.run_resharper_inspectcode }}" `
+          -RunReSharperInspectCode "${{ inputs.run_resharper_inspectcode }}" `
+          -ReSharperReportPath "${{ inputs.resharper_report_path }}" `
+          -EventName "${{ inputs.event_name }}" `
+          -GitRef "${{ inputs.git_ref }}" `
+          -RefName "${{ inputs.ref_name }}" `
+          -BranchName "${{ inputs.branch_name }}" `
+          -PullRequestKey "${{ inputs.pull_request_key }}" `
+          -PullRequestBranch "${{ inputs.pull_request_branch }}" `
+          -PullRequestBase "${{ inputs.pull_request_base }}"

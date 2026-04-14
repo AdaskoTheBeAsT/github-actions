@@ -1,0 +1,24 @@
+name: Detect Lightweight Tag
+description: Detect whether a git tag ref points to a lightweight tag.
+
+inputs:
+  ref:
+    description: Git ref to inspect; defaults to GITHUB_REF when not provided
+    required: false
+    default: ""
+
+outputs:
+  is_lightweight_tag:
+    description: "'true' when the tag ref points to a lightweight tag; otherwise 'false'"
+    value: ${{ steps.detect.outputs.is_lightweight_tag }}
+
+runs:
+  using: composite
+  steps:
+    - name: Detect lightweight tag
+      id: detect
+      shell: pwsh
+      working-directory: ${{ github.workspace }}
+      run: |
+        & "${{ github.action_path }}/detect-lightweight-tag.ps1" `
+          -Ref "${{ inputs.ref }}"

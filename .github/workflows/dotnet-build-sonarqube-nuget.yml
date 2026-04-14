@@ -1,0 +1,312 @@
+name: Reusable .NET Build, Sonar, and NuGet Publish
+
+on:
+  workflow_call:
+    inputs:
+      solution_name:
+        description: Path to the solution file to restore, build, test, and pack
+        required: true
+        type: string
+      runs_on:
+        description: GitHub Actions runner label to use for the job
+        required: false
+        type: string
+        default: ubuntu-latest
+      sonar_provider:
+        description: Sonar provider to use, either sonarcloud or sonarqube
+        required: false
+        type: string
+        default: sonarcloud
+      sonar_project_key:
+        description: Sonar project key
+        required: true
+        type: string
+      sonar_organization:
+        description: SonarCloud organization; required when sonar_provider is sonarcloud
+        required: false
+        type: string
+        default: ""
+      dotnet_versions:
+        description: Comma-separated list of one or more .NET SDK versions to install
+        required: false
+        type: string
+        default: ""
+      use_global_json:
+        description: When true, also install the SDK version from the root global.json
+        required: false
+        type: boolean
+        default: false
+      show_dotnet_info:
+        description: When true, run dotnet --info after SDK setup
+        required: false
+        type: boolean
+        default: true
+      run_resharper_inspectcode:
+        description: When true, install and run JetBrains ReSharper InspectCode for non-tag builds
+        required: false
+        type: boolean
+        default: true
+      publish_test_results:
+        description: When true, publish TRX test results to GitHub checks
+        required: false
+        type: boolean
+        default: true
+      publish_coverage_report:
+        description: When true, generate and publish the coverage HTML artifact and workflow summary
+        required: false
+        type: boolean
+        default: true
+      sonar_host_url:
+        description: Sonar server URL
+        required: false
+        type: string
+        default: https://sonarcloud.io
+      sonar_settings_file:
+        description: Path to SonarQube.Analysis.xml
+        required: false
+        type: string
+        default: SonarQube.Analysis.xml
+      coverage_settings_file:
+        description: Path to coverage.settings.xml
+        required: false
+        type: string
+        default: coverage.settings.xml
+      package_output_directory:
+        description: Directory where dotnet pack writes NuGet packages
+        required: false
+        type: string
+        default: artifacts/nuget
+      nuget_source_url:
+        description: NuGet feed URL used for package publishing
+        required: false
+        type: string
+        default: https://api.nuget.org/v3/index.json
+      strip_v_prefix:
+        description: When true, strip a leading v or V from the git tag version
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      sonar_token:
+        required: false
+      nuget_api_key:
+        required: false
+
+permissions:
+  checks: write
+  contents: read
+  pull-requests: read
+
+jobs:
+  build_test_scan_publish:
+    runs-on: ${{ inputs.runs_on }}
+    env:
+      COVERAGE_REPORT_DIRECTORY: coverage-report
+      COVERAGE_REPORT_FILE: coverage.xml
+      RESHARPER_REPORT_PATH: CodeQualityResults.xml
+      TEST_RESULTS_DIRECTORY: TestResults
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect lightweight tag
+        id: lightweight_tag
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/detect-lightweight-tag@main
+
+      - name: Setup dotnet
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/setup-dotnet-sdks@main
+        with:
+          dotnet_versions: ${{ inputs.dotnet_versions }}
+          use_global_json: ${{ inputs.use_global_json }}
+          show_info: ${{ inputs.show_dotnet_info }}
+
+      - name: Add .NET global tools to PATH
+        shell: pwsh
+        run: |
+          "$HOME/.dotnet/tools" >> $env:GITHUB_PATH
+
+      - name: Apply tag version
+        id: apply_version
+        if: steps.lightweight_tag.outputs.is_lightweight_tag == 'true'
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/set-directory-build-props-version-from-tag@main
+        with:
+          tag: ${{ github.ref_name }}
+          strip_v_prefix: ${{ inputs.strip_v_prefix }}
+
+      - name: Show version
+        if: steps.lightweight_tag.outputs.is_lightweight_tag == 'true'
+        shell: pwsh
+        run: |
+          Write-Host "Version is ${{ steps.apply_version.outputs.version }}"
+
+      - name: Validate Sonar configuration
+        shell: pwsh
+        env:
+          SONAR_PROJECT_KEY: ${{ inputs.sonar_project_key }}
+          SONAR_PROVIDER: ${{ inputs.sonar_provider }}
+          SONAR_TOKEN: ${{ secrets.sonar_token }}
+          SONAR_ORGANIZATION: ${{ inputs.sonar_organization }}
+        run: |
+          if ($env:SONAR_PROVIDER -notin @("sonarcloud", "sonarqube")) {
+            throw "Input 'sonar_provider' must be either 'sonarcloud' or 'sonarqube'."
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:SONAR_TOKEN)) {
+            throw "Secret 'sonar_token' is required for pull request, branch, and tag builds."
+          }
+
+          if ($env:SONAR_PROVIDER -eq "sonarcloud" -and [string]::IsNullOrWhiteSpace($env:SONAR_ORGANIZATION)) {
+            throw "Input 'sonar_organization' is required when sonar_provider is 'sonarcloud'."
+          }
+
+      - name: Install dotnet-coverage tool
+        shell: pwsh
+        run: |
+          dotnet tool install --global dotnet-coverage
+
+      - name: Install SonarQube Scanner for .NET
+        shell: pwsh
+        run: |
+          dotnet tool install --global dotnet-sonarscanner
+
+      - name: Install JetBrains ReSharper Global Tools
+        if: inputs.run_resharper_inspectcode
+        shell: pwsh
+        run: |
+          dotnet tool install --global JetBrains.ReSharper.GlobalTools
+
+      - name: Install ReportGenerator tool
+        if: inputs.publish_coverage_report
+        shell: pwsh
+        run: |
+          dotnet tool install --global dotnet-reportgenerator-globaltool
+
+      - name: Restore dependencies
+        shell: pwsh
+        run: |
+          dotnet restore "${{ inputs.solution_name }}"
+
+      - name: Start Sonar analysis
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/start-sonarqube-analysis@main
+        with:
+          sonar_provider: ${{ inputs.sonar_provider }}
+          project_key: ${{ inputs.sonar_project_key }}
+          sonar_organization: ${{ inputs.sonar_organization }}
+          sonar_token: ${{ secrets.sonar_token }}
+          sonar_host_url: ${{ inputs.sonar_host_url }}
+          settings_file: ${{ inputs.sonar_settings_file }}
+          run_resharper_inspectcode: ${{ inputs.run_resharper_inspectcode }}
+          resharper_report_path: ${{ inputs.run_resharper_inspectcode && env.RESHARPER_REPORT_PATH || '' }}
+          event_name: ${{ github.event_name }}
+          git_ref: ${{ github.ref }}
+          ref_name: ${{ github.ref_name }}
+          branch_name: ${{ github.ref_name }}
+          pull_request_key: ${{ github.event.number }}
+          pull_request_branch: ${{ github.head_ref }}
+          pull_request_base: ${{ github.base_ref }}
+
+      - name: Build solution
+        shell: pwsh
+        run: |
+          dotnet build "${{ inputs.solution_name }}" `
+            --no-restore `
+            --configuration Debug `
+            -p:TreatWarningsAsErrors=false
+
+      - name: Test solution
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/test-with-coverage@main
+        with:
+          solution_name: ${{ inputs.solution_name }}
+          coverage_settings_file: ${{ inputs.coverage_settings_file }}
+          results_directory: ${{ env.TEST_RESULTS_DIRECTORY }}
+
+      - name: Run ReSharper InspectCode
+        if: inputs.run_resharper_inspectcode
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $solutionPath = Join-Path $env:GITHUB_WORKSPACE "${{ inputs.solution_name }}"
+          $reportPath = Join-Path $env:GITHUB_WORKSPACE $env:RESHARPER_REPORT_PATH
+
+          jb inspectcode $solutionPath `
+            -o=$reportPath `
+            --format=Xml
+
+      - name: End Sonar analysis
+        shell: pwsh
+        run: |
+          dotnet-sonarscanner end /d:sonar.token="${{ secrets.sonar_token }}"
+
+      - name: Publish test results
+        if: always() && inputs.publish_test_results
+        uses: EnricoMi/publish-unit-test-result-action@2ceeed2b8f26e15b06c3846719f75354febd9e7b # v2
+        with:
+          check_name: Test Results
+          comment_mode: off
+          files: |
+            ${{ env.TEST_RESULTS_DIRECTORY }}/**/*.trx
+
+      - name: Generate coverage report
+        if: always() && inputs.publish_coverage_report && hashFiles('coverage.xml') != ''
+        shell: pwsh
+        run: |
+          $reportDirectory = Join-Path $env:GITHUB_WORKSPACE $env:COVERAGE_REPORT_DIRECTORY
+          $coverageFile = Join-Path $env:GITHUB_WORKSPACE $env:COVERAGE_REPORT_FILE
+
+          reportgenerator `
+            -reports:$coverageFile `
+            -targetdir:$reportDirectory `
+            -reporttypes:"Html;MarkdownSummaryGithub"
+
+      - name: Upload coverage report artifact
+        if: always() && inputs.publish_coverage_report && hashFiles('coverage.xml') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage-report
+          path: ${{ env.COVERAGE_REPORT_DIRECTORY }}
+
+      - name: Add coverage summary to workflow summary
+        if: always() && inputs.publish_coverage_report && hashFiles('coverage.xml') != ''
+        shell: pwsh
+        run: |
+          $reportDirectory = Join-Path $env:GITHUB_WORKSPACE $env:COVERAGE_REPORT_DIRECTORY
+          $summaryFile = Get-ChildItem -Path $reportDirectory -Filter "*.md" -File | Select-Object -First 1
+
+          if ($null -eq $summaryFile) {
+            throw "Coverage summary markdown file was not generated."
+          }
+
+          Get-Content -LiteralPath $summaryFile.FullName | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+
+      - name: Validate NuGet publish configuration
+        if: steps.lightweight_tag.outputs.is_lightweight_tag == 'true'
+        shell: pwsh
+        env:
+          NUGET_API_KEY: ${{ secrets.nuget_api_key }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NUGET_API_KEY)) {
+            throw "Secret 'nuget_api_key' is required when publishing packages from a lightweight tag."
+          }
+
+      - name: Pack NuGet packages
+        if: steps.lightweight_tag.outputs.is_lightweight_tag == 'true'
+        shell: pwsh
+        run: |
+          $outputDirectory = Join-Path $env:GITHUB_WORKSPACE "${{ inputs.package_output_directory }}"
+          New-Item -ItemType Directory -Force -Path $outputDirectory | Out-Null
+
+          dotnet pack "${{ inputs.solution_name }}" `
+            --no-restore `
+            --configuration Release `
+            -o $outputDirectory
+
+      - name: Publish NuGet packages
+        if: steps.lightweight_tag.outputs.is_lightweight_tag == 'true'
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/publish-nuget-packages@main
+        with:
+          package_output_directory: ${{ inputs.package_output_directory }}
+          nuget_source_url: ${{ inputs.nuget_source_url }}
+          nuget_api_key: ${{ secrets.nuget_api_key }}
