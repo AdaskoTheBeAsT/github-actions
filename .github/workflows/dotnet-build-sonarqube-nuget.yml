@@ -95,6 +95,7 @@ on:
 permissions:
   checks: write
   contents: read
+  issues: write
   pull-requests: read
 
 jobs:
