@@ -153,6 +153,46 @@ Invoke-TestCase -Name "starts branch analysis with branch argument" -ScriptBlock
   }
 }
 
+Invoke-TestCase -Name "uses the provided scanner path" -ScriptBlock {
+  $workingDirectory = New-TestDirectory
+
+  try {
+    $env:GITHUB_WORKSPACE = $workingDirectory
+    $global:CapturedScannerPath = ""
+    $global:CapturedSonarScannerArguments = @()
+
+    function global:custom-sonarscanner {
+      param(
+        [Parameter(ValueFromRemainingArguments = $true)]
+        [string[]]$Arguments
+      )
+
+      $global:CapturedScannerPath = "custom-sonarscanner"
+      $global:CapturedSonarScannerArguments = @($Arguments)
+    }
+
+    & $scriptPath `
+      -SonarProvider "sonarqube" `
+      -ProjectKey "demo-project" `
+      -SonarToken "token-value" `
+      -SonarHostUrl "https://sonar.example.com" `
+      -SettingsFile "SonarQube.Analysis.xml" `
+      -ScannerPath "custom-sonarscanner" `
+      -RunReSharperInspectCode "false" `
+      -EventName "push" `
+      -BranchName "main"
+
+    Assert-Equal -Actual $global:CapturedScannerPath -Expected "custom-sonarscanner" -Message "The configured scanner path should be used."
+    Assert-Equal -Actual $global:CapturedSonarScannerArguments[0] -Expected "begin" -Message "The configured scanner should receive the begin command."
+  } finally {
+    Remove-Item Function:\global:custom-sonarscanner -ErrorAction SilentlyContinue
+    Remove-Variable CapturedScannerPath -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable CapturedSonarScannerArguments -Scope Global -ErrorAction SilentlyContinue
+    Remove-Item Env:GITHUB_WORKSPACE -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $workingDirectory -Recurse -Force
+  }
+}
+
 Invoke-TestCase -Name "starts tag analysis with project version argument" -ScriptBlock {
   $workingDirectory = New-TestDirectory
 

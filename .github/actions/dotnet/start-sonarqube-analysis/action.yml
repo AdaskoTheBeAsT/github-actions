@@ -23,12 +23,12 @@ inputs:
     description: Path to SonarQube.Analysis.xml
     required: false
     default: SonarQube.Analysis.xml
+  scanner_path:
+    description: Path to the dotnet-sonarscanner executable
+    required: false
+    default: dotnet-sonarscanner
   run_resharper_inspectcode:
     description: When true, include the ReSharper InspectCode XML report in Sonar analysis
-    required: false
-    default: "false"
-  run_resharper_inspectcode:
-    description: When true, include the ReSharper InspectCode report in Sonar analysis
     required: false
     default: "false"
   resharper_report_path:
@@ -77,7 +77,7 @@ runs:
           -SonarToken "${{ inputs.sonar_token }}" `
           -SonarHostUrl "${{ inputs.sonar_host_url }}" `
           -SettingsFile "${{ inputs.settings_file }}" `
-          -RunReSharperInspectCode "${{ inputs.run_resharper_inspectcode }}" `
+          -ScannerPath "${{ inputs.scanner_path }}" `
           -RunReSharperInspectCode "${{ inputs.run_resharper_inspectcode }}" `
           -ReSharperReportPath "${{ inputs.resharper_report_path }}" `
           -EventName "${{ inputs.event_name }}" `

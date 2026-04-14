@@ -16,6 +16,8 @@ param(
 
   [string]$SettingsFile = "SonarQube.Analysis.xml",
 
+  [string]$ScannerPath = "dotnet-sonarscanner",
+
   [string]$RunReSharperInspectCode = "false",
 
   [AllowEmptyString()]
@@ -126,6 +128,13 @@ Assert-NotWhiteSpace -Value $SonarHostUrl -Name "sonar_host_url"
 Assert-NotWhiteSpace -Value $SettingsFile -Name "settings_file"
 Assert-NotWhiteSpace -Value $EventName -Name "event_name"
 
+$resolvedScannerPath = $ScannerPath
+if ([string]::IsNullOrWhiteSpace($resolvedScannerPath)) {
+  $resolvedScannerPath = "dotnet-sonarscanner"
+} else {
+  $resolvedScannerPath = $resolvedScannerPath.Trim()
+}
+
 $settingsPath = Resolve-WorkspaceRelativePath -Path $SettingsFile
 $beginArguments = @(
   "begin",
@@ -164,4 +173,4 @@ if ($EventName.Equals("pull_request", [System.StringComparison]::OrdinalIgnoreCa
 }
 
 Write-Host "Starting $normalizedSonarProvider analysis for event '$EventName'."
-& dotnet-sonarscanner @beginArguments
+& $resolvedScannerPath @beginArguments
