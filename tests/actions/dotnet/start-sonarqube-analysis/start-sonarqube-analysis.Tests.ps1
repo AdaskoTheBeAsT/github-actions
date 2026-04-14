@@ -101,12 +101,12 @@ Invoke-TestCase -Name "starts pull request analysis with pull request arguments"
       -PullRequestBase "main"
 
     Assert-Equal -Actual $global:CapturedSonarScannerArguments[0] -Expected "begin" -Message "The SonarScanner command should start with begin."
-    Assert-True -Condition ($global:CapturedSonarScannerArguments -contains '/o:"demo-org"') -Message "The SonarCloud organization argument was not passed."
-    Assert-True -Condition ($global:CapturedSonarScannerArguments -contains '/d:sonar.pullrequest.key="42"') -Message "The pull request key argument was not passed."
-    Assert-True -Condition ($global:CapturedSonarScannerArguments -contains '/d:sonar.pullrequest.branch="feature/my-change"') -Message "The pull request branch argument was not passed."
-    Assert-True -Condition ($global:CapturedSonarScannerArguments -contains '/d:sonar.pullrequest.base="main"') -Message "The pull request base argument was not passed."
-    Assert-True -Condition ($global:CapturedSonarScannerArguments -contains "/s:`"$expectedSettingsPath`"") -Message "The settings file path should be resolved from the workspace."
-    Assert-True -Condition ($global:CapturedSonarScannerArguments -contains "/d:sonar.resharper.cs.reportPath=`"$expectedReportPath`"") -Message "The ReSharper report path should be resolved from the workspace."
+    Assert-True -Condition ($global:CapturedSonarScannerArguments -contains '/o:demo-org') -Message "The SonarCloud organization argument was not passed."
+    Assert-True -Condition ($global:CapturedSonarScannerArguments -contains '/d:sonar.pullrequest.key=42') -Message "The pull request key argument was not passed."
+    Assert-True -Condition ($global:CapturedSonarScannerArguments -contains '/d:sonar.pullrequest.branch=feature/my-change') -Message "The pull request branch argument was not passed."
+    Assert-True -Condition ($global:CapturedSonarScannerArguments -contains '/d:sonar.pullrequest.base=main') -Message "The pull request base argument was not passed."
+    Assert-True -Condition ($global:CapturedSonarScannerArguments -contains "/s:$expectedSettingsPath") -Message "The settings file path should be resolved from the workspace."
+    Assert-True -Condition ($global:CapturedSonarScannerArguments -contains "/d:sonar.resharper.cs.reportPath=$expectedReportPath") -Message "The ReSharper report path should be resolved from the workspace."
   } finally {
     Remove-Item Function:\global:dotnet-sonarscanner -ErrorAction SilentlyContinue
     Remove-Variable CapturedSonarScannerArguments -Scope Global -ErrorAction SilentlyContinue
@@ -142,7 +142,7 @@ Invoke-TestCase -Name "starts branch analysis with branch argument" -ScriptBlock
       -EventName "push" `
       -BranchName "main"
 
-    Assert-True -Condition ($global:CapturedSonarScannerArguments -contains '/d:sonar.branch.name="main"') -Message "The branch analysis argument was not passed."
+    Assert-True -Condition ($global:CapturedSonarScannerArguments -contains '/d:sonar.branch.name=main') -Message "The branch analysis argument was not passed."
     Assert-True -Condition (-not ($global:CapturedSonarScannerArguments -match '^/o:')) -Message "The SonarCloud organization argument should not be present for SonarQube."
     Assert-True -Condition (-not ($global:CapturedSonarScannerArguments -match "pullrequest")) -Message "Pull request arguments should not be present for branch analysis."
   } finally {
@@ -220,7 +220,7 @@ Invoke-TestCase -Name "starts tag analysis with project version argument" -Scrip
       -GitRef "refs/tags/v1.2.3" `
       -RefName "v1.2.3"
 
-    Assert-True -Condition ($global:CapturedSonarScannerArguments -contains '/d:sonar.projectVersion="v1.2.3"') -Message "The tag analysis argument was not passed."
+    Assert-True -Condition ($global:CapturedSonarScannerArguments -contains '/d:sonar.projectVersion=v1.2.3') -Message "The tag analysis argument was not passed."
     Assert-True -Condition (-not ($global:CapturedSonarScannerArguments -match "branch.name")) -Message "Branch analysis argument should not be present for tag analysis."
     Assert-True -Condition (-not ($global:CapturedSonarScannerArguments -match "pullrequest")) -Message "Pull request arguments should not be present for tag analysis."
   } finally {

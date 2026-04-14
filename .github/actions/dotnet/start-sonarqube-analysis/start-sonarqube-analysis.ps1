@@ -138,20 +138,20 @@ if ([string]::IsNullOrWhiteSpace($resolvedScannerPath)) {
 $settingsPath = Resolve-WorkspaceRelativePath -Path $SettingsFile
 $beginArguments = @(
   "begin",
-  "/k:`"$ProjectKey`"",
-  "/d:sonar.token=`"$SonarToken`"",
-  "/d:sonar.host.url=`"$SonarHostUrl`"",
-  "/s:`"$settingsPath`""
+  "/k:$ProjectKey",
+  "/d:sonar.token=$SonarToken",
+  "/d:sonar.host.url=$SonarHostUrl",
+  "/s:$settingsPath"
 )
 
 if ($normalizedSonarProvider -eq "sonarcloud") {
-  $beginArguments += "/o:`"$SonarOrganization`""
+  $beginArguments += "/o:$SonarOrganization"
 }
 
 if (Test-InputIsTrue -Value $RunReSharperInspectCode) {
   Assert-NotWhiteSpace -Value $ReSharperReportPath -Name "resharper_report_path"
   $resharperReportFullPath = Resolve-WorkspaceRelativePath -Path $ReSharperReportPath
-  $beginArguments += "/d:sonar.resharper.cs.reportPath=`"$resharperReportFullPath`""
+  $beginArguments += "/d:sonar.resharper.cs.reportPath=$resharperReportFullPath"
 }
 
 if ($EventName.Equals("pull_request", [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -160,16 +160,16 @@ if ($EventName.Equals("pull_request", [System.StringComparison]::OrdinalIgnoreCa
   Assert-NotWhiteSpace -Value $PullRequestBase -Name "pull_request_base"
 
   $beginArguments += @(
-    "/d:sonar.pullrequest.key=`"$PullRequestKey`"",
-    "/d:sonar.pullrequest.branch=`"$PullRequestBranch`"",
-    "/d:sonar.pullrequest.base=`"$PullRequestBase`""
+    "/d:sonar.pullrequest.key=$PullRequestKey",
+    "/d:sonar.pullrequest.branch=$PullRequestBranch",
+    "/d:sonar.pullrequest.base=$PullRequestBase"
   )
 } elseif (Test-TagRef -Value $GitRef) {
   Assert-NotWhiteSpace -Value $RefName -Name "ref_name"
-  $beginArguments += "/d:sonar.projectVersion=`"$RefName`""
+  $beginArguments += "/d:sonar.projectVersion=$RefName"
 } else {
   Assert-NotWhiteSpace -Value $BranchName -Name "branch_name"
-  $beginArguments += "/d:sonar.branch.name=`"$BranchName`""
+  $beginArguments += "/d:sonar.branch.name=$BranchName"
 }
 
 Write-Host "Starting $normalizedSonarProvider analysis for event '$EventName'."
