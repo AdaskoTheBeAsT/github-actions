@@ -282,10 +282,14 @@ jobs:
         run: |
           $solutionPath = Join-Path $env:GITHUB_WORKSPACE "${{ inputs.solution_name }}"
           $reportPath = Join-Path $env:GITHUB_WORKSPACE $env:RESHARPER_REPORT_PATH
+          $inspectCodeArguments = @(
+            "inspectcode"
+            $solutionPath
+            "-o=$reportPath"
+            "--format=Xml"
+          )
 
-          jb inspectcode $solutionPath `
-            -o=$reportPath `
-            --format=Xml
+          jb @inspectCodeArguments
 
       - name: End Sonar analysis
         shell: pwsh
