@@ -103,7 +103,7 @@ permissions:
 
 jobs:
   build:
-    uses: AdaskoTheBeAsT/github-actions/.github/workflows/dotnet-build-sonarqube-nuget.yml@main
+    uses: AdaskoTheBeAsT/github-actions/.github/workflows/dotnet-build-sonarqube-nuget.yml@v1
     with:
       solution_name: ${{ vars.SOLUTION_NAME }}
       runs_on: ${{ vars.RUNS_ON }}
@@ -119,17 +119,19 @@ jobs:
 
 #### How to reference the reusable workflow
 - use `uses: AdaskoTheBeAsT/github-actions/.github/workflows/dotnet-build-sonarqube-nuget.yml@<ref>`
-- replace `<ref>` with a branch, tag, or commit SHA such as `main`, `v1.0.0`, or a pinned SHA
+- replace `<ref>` with a branch, tag, or commit SHA such as `v1`, `v1.0.0`, or a pinned SHA
 - pass non-sensitive values in `with:`
 - pass tokens and credentials in `secrets:`
 - do not add a separate checkout step in the calling job unless you have another job outside this reusable workflow that needs it
 - keep `checks: write` permission if you want published TRX test results to appear in GitHub checks
 
+- for consumers, prefer `@v1` over `@main` so you can ship backward-compatible updates safely
+
 #### Minimal reference example
 ```yaml
 jobs:
   ci:
-    uses: AdaskoTheBeAsT/github-actions/.github/workflows/dotnet-build-sonarqube-nuget.yml@main
+    uses: AdaskoTheBeAsT/github-actions/.github/workflows/dotnet-build-sonarqube-nuget.yml@v1
     with:
       solution_name: ${{ vars.SOLUTION_NAME }}
       runs_on: ${{ vars.RUNS_ON }}

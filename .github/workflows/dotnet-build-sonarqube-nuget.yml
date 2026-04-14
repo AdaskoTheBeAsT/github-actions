@@ -114,10 +114,10 @@ jobs:
 
       - name: Detect lightweight tag
         id: lightweight_tag
-        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/detect-lightweight-tag@main
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/detect-lightweight-tag@v1
 
       - name: Setup dotnet
-        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/setup-dotnet-sdks@main
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/setup-dotnet-sdks@v1
         with:
           dotnet_versions: ${{ inputs.dotnet_versions }}
           use_global_json: ${{ inputs.use_global_json }}
@@ -131,7 +131,7 @@ jobs:
       - name: Apply tag version
         id: apply_version
         if: steps.lightweight_tag.outputs.is_lightweight_tag == 'true'
-        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/set-directory-build-props-version-from-tag@main
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/set-directory-build-props-version-from-tag@v1
         with:
           tag: ${{ github.ref_name }}
           strip_v_prefix: ${{ inputs.strip_v_prefix }}
@@ -190,7 +190,7 @@ jobs:
           dotnet restore "${{ inputs.solution_name }}"
 
       - name: Start Sonar analysis
-        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/start-sonarqube-analysis@main
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/start-sonarqube-analysis@v1
         with:
           sonar_provider: ${{ inputs.sonar_provider }}
           project_key: ${{ inputs.sonar_project_key }}
@@ -217,7 +217,7 @@ jobs:
             -p:TreatWarningsAsErrors=false
 
       - name: Test solution
-        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/test-with-coverage@main
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/test-with-coverage@v1
         with:
           solution_name: ${{ inputs.solution_name }}
           coverage_settings_file: ${{ inputs.coverage_settings_file }}
@@ -305,7 +305,7 @@ jobs:
 
       - name: Publish NuGet packages
         if: steps.lightweight_tag.outputs.is_lightweight_tag == 'true'
-        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/publish-nuget-packages@main
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/publish-nuget-packages@v1
         with:
           package_output_directory: ${{ inputs.package_output_directory }}
           nuget_source_url: ${{ inputs.nuget_source_url }}
