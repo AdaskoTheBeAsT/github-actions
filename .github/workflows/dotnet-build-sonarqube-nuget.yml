@@ -86,6 +86,23 @@ on:
         required: false
         type: boolean
         default: true
+      strict_build:
+        description: >-
+          When true, run dotnet build with --no-incremental and -t:Rebuild to
+          defeat incremental caching and force every MSBuild target to rerun.
+          Catches regressions hidden by obj/bin caches.
+        required: false
+        type: boolean
+        default: true
+      deterministic_build:
+        description: >-
+          When true, set ContinuousIntegrationBuild=true for the whole job so
+          every dotnet restore, build, test, and pack invocation produces
+          deterministic output (stable PDBs, SourceLink paths, no machine-
+          specific timestamps or paths).
+        required: false
+        type: boolean
+        default: true
     secrets:
       sonar_token:
         required: false
@@ -102,6 +119,7 @@ jobs:
   build_test_scan_publish:
     runs-on: ${{ inputs.runs_on }}
     env:
+      ContinuousIntegrationBuild: ${{ inputs.deterministic_build }}
       COVERAGE_REPORT_DIRECTORY: coverage-report
       COVERAGE_REPORT_FILE: coverage.xml
       RESHARPER_REPORT_PATH: CodeQualityResults.xml
@@ -262,11 +280,20 @@ jobs:
 
       - name: Build solution
         shell: pwsh
+        env:
+          STRICT_BUILD: ${{ inputs.strict_build }}
         run: |
+          $strictArgs = @()
+          if ($env:STRICT_BUILD -eq 'true') {
+            $strictArgs += '--no-incremental'
+            $strictArgs += '-t:Rebuild'
+          }
+
           dotnet build "${{ inputs.solution_name }}" `
             --no-restore `
             --configuration Debug `
-            -p:TreatWarningsAsErrors=false
+            -p:TreatWarningsAsErrors=false `
+            @strictArgs
 
       - name: Test solution
         uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/test-with-coverage@main

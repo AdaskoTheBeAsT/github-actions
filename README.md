@@ -56,6 +56,8 @@ This workflow performs its own `actions/checkout`, so the calling workflow does 
 - `package_output_directory`: pack output directory
 - `nuget_source_url`: package feed URL
 - `strip_v_prefix`: strips `v`/`V` from tags like `v1.2.3`
+- `strict_build`: when `true` (default), runs `dotnet build` with `--no-incremental` and `-t:Rebuild` to defeat incremental caching and force every MSBuild target to rerun; disables the class of regressions that only surface after a clean build
+- `deterministic_build`: when `true` (default), sets `ContinuousIntegrationBuild=true` as a job-level environment variable so every `dotnet restore`, `build`, `test`, and `pack` call produces deterministic output (stable PDBs, SourceLink paths, no machine-specific timestamps or paths)
 
 #### Required workflow secrets
 - `sonar_token`: required for pull request and branch builds
@@ -84,6 +86,8 @@ You do not need to define every repository variable. Some inputs already have de
 - `PACKAGE_OUTPUT_DIRECTORY` → defaults to `artifacts/nuget`
 - `NUGET_SOURCE_URL` → defaults to `https://api.nuget.org/v3/index.json`
 - `STRIP_V_PREFIX` → defaults to `true`
+- `STRICT_BUILD` → defaults to `true`
+- `DETERMINISTIC_BUILD` → defaults to `true`
 
 #### Example usage
 ```yaml
@@ -112,6 +116,8 @@ jobs:
       sonar_organization: ${{ vars.SONAR_ORGANIZATION }}
       dotnet_versions: ${{ vars.DOTNET_VERSIONS }}
       use_global_json: true
+      strict_build: true
+      deterministic_build: true
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
       nuget_api_key: ${{ secrets.NUGET_API_KEY }}
@@ -148,6 +154,25 @@ jobs:
 - coverage HTML is uploaded as the `coverage-report` workflow artifact
 - a Markdown coverage summary is appended to the workflow summary
 - `ReportGenerator` is used to create the HTML report and summary
+
+#### Build hygiene (`strict_build`, `deterministic_build`)
+Two inputs control how aggressively CI invalidates caches and how reproducible the produced binaries are.
+
+- **`strict_build`** (default `true`)
+  - Adds `--no-incremental -t:Rebuild` to the `dotnet build` invocation.
+  - `--no-incremental` disables MSBuild's target-skipping so every target reruns.
+  - `-t:Rebuild` invokes a Clean + Build top-level target, making sure that stale `obj`/`bin` artifacts from a previous job do not influence the current build.
+  - Together they defeat the class of regressions that pass on a cached incremental build but fail on a clean one (for example a `#pragma warning disable` for a *compile error* that only manifests on a full rebuild).
+  - Set to `false` on very large solutions when build time is more important than guaranteed freshness.
+
+- **`deterministic_build`** (default `true`)
+  - Sets the MSBuild property `ContinuousIntegrationBuild=true` as a **job-level environment variable**, so every `dotnet restore`, `build`, `test`, and `pack` call in the job inherits it automatically.
+  - Enables MSBuild's deterministic build contract: stable PDB paths, embedded SourceLink paths, no machine-specific timestamps, reproducible NuGet package hashes.
+  - Recommended for anything that publishes NuGet packages so consumers can diff binaries reliably.
+
+- These switches affect only the **build** step. `dotnet pack` is not given `-t:Rebuild` because that would wipe and re-emit signed assemblies right after the Build step produced them; it still picks up `ContinuousIntegrationBuild=true` from job env, so the packed output remains deterministic.
+
+- If you want to invalidate the SDK tool caches as well (SonarScanner, dotnet-coverage, ReportGenerator, ReSharper tools), bump the cache keys in your fork — the workflow currently reuses them across runs, which is orthogonal to `strict_build`.
 
 ## Composite actions
 
@@ -193,6 +218,8 @@ Use repository variables for non-sensitive workflow inputs:
 - `PACKAGE_OUTPUT_DIRECTORY`
 - `NUGET_SOURCE_URL`
 - `STRIP_V_PREFIX`
+- `STRICT_BUILD`
+- `DETERMINISTIC_BUILD`
 
 Recommended minimum setup:
 - define `SOLUTION_NAME`
