@@ -19,8 +19,9 @@ runs:
     - name: Publish NuGet packages
       shell: pwsh
       working-directory: ${{ github.workspace }}
+      env:
+        NUGET_API_KEY: ${{ inputs.nuget_api_key }}
       run: |
         & "${{ github.action_path }}/publish-nuget-packages.ps1" `
           -PackageOutputDirectory "${{ inputs.package_output_directory }}" `
-          -NugetSourceUrl "${{ inputs.nuget_source_url }}" `
-          -NugetApiKey "${{ inputs.nuget_api_key }}"
+          -NugetSourceUrl "${{ inputs.nuget_source_url }}"

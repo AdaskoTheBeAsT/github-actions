@@ -3,70 +3,9 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\..\.."))
 $scriptPath = Join-Path $repoRoot ".github/actions/dotnet/test-with-coverage/test-with-coverage.ps1"
-$failures = New-Object System.Collections.Generic.List[string]
 
-function New-TestDirectory {
-  $path = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString("N"))
-  New-Item -ItemType Directory -Path $path | Out-Null
-  return $path
-}
-
-function Assert-Equal {
-  param(
-    $Actual,
-    $Expected,
-    [string]$Message
-  )
-
-  if ($Actual -ne $Expected) {
-    throw "$Message Expected '$Expected', got '$Actual'."
-  }
-}
-
-function Assert-True {
-  param(
-    [bool]$Condition,
-    [string]$Message
-  )
-
-  if (-not $Condition) {
-    throw $Message
-  }
-}
-
-function Assert-Throws {
-  param(
-    [scriptblock]$ScriptBlock,
-    [string]$Message
-  )
-
-  $didThrow = $false
-  try {
-    & $ScriptBlock
-  } catch {
-    $didThrow = $true
-  }
-
-  if (-not $didThrow) {
-    throw $Message
-  }
-}
-
-function Invoke-TestCase {
-  param(
-    [string]$Name,
-    [scriptblock]$ScriptBlock
-  )
-
-  try {
-    & $ScriptBlock
-    Write-Host "[PASS] $Name"
-  } catch {
-    $message = "$Name`n$($_.Exception.Message)"
-    $failures.Add($message) | Out-Null
-    Write-Host "[FAIL] $message"
-  }
-}
+Import-Module -Force (Join-Path $repoRoot "tests/_shared/TestFramework.psm1")
+Reset-TestFramework
 
 Invoke-TestCase -Name "runs dotnet-coverage with the expected test command" -ScriptBlock {
   $workingDirectory = New-TestDirectory
@@ -111,8 +50,4 @@ Invoke-TestCase -Name "fails when the solution name is empty" -ScriptBlock {
   } -Message "The script should fail when solution_name is empty."
 }
 
-if ($failures.Count -gt 0) {
-  throw ("{0} test(s) failed.`n`n{1}" -f $failures.Count, ($failures -join "`n`n"))
-}
-
-Write-Host "All tests passed."
+Assert-TestFrameworkSuccess

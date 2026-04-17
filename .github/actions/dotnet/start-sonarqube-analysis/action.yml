@@ -69,12 +69,13 @@ runs:
     - name: Start Sonar analysis
       shell: pwsh
       working-directory: ${{ github.workspace }}
+      env:
+        SONAR_TOKEN: ${{ inputs.sonar_token }}
       run: |
         & "${{ github.action_path }}/start-sonarqube-analysis.ps1" `
           -SonarProvider "${{ inputs.sonar_provider }}" `
           -ProjectKey "${{ inputs.project_key }}" `
           -SonarOrganization "${{ inputs.sonar_organization }}" `
-          -SonarToken "${{ inputs.sonar_token }}" `
           -SonarHostUrl "${{ inputs.sonar_host_url }}" `
           -SettingsFile "${{ inputs.settings_file }}" `
           -ScannerPath "${{ inputs.scanner_path }}" `

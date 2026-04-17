@@ -115,6 +115,10 @@ permissions:
   issues: write
   pull-requests: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build_test_scan_publish:
     runs-on: ${{ inputs.runs_on }}
@@ -134,7 +138,7 @@ jobs:
       - name: Cache SonarQube Cloud packages
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: ~\sonar\cache
+          path: ~/sonar/cache
           key: ${{ runner.os }}-sonar
           restore-keys: ${{ runner.os }}-sonar
 
@@ -142,7 +146,7 @@ jobs:
         id: cache-sonar-scanner
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: ${{ runner.temp }}\scanner
+          path: ${{ runner.temp }}/scanner
           key: ${{ runner.os }}-sonar-scanner
           restore-keys: ${{ runner.os }}-sonar-scanner
 
@@ -151,7 +155,7 @@ jobs:
         if: inputs.run_resharper_inspectcode
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: ${{ runner.temp }}\resharper-tools
+          path: ${{ runner.temp }}/resharper-tools
           key: ${{ runner.os }}-resharper-tools
           restore-keys: ${{ runner.os }}-resharper-tools
 
@@ -159,7 +163,7 @@ jobs:
         id: cache-dotnet-coverage
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: ${{ runner.temp }}\dotnet-coverage
+          path: ${{ runner.temp }}/dotnet-coverage
           key: ${{ runner.os }}-dotnet-coverage
           restore-keys: ${{ runner.os }}-dotnet-coverage
 
@@ -168,7 +172,7 @@ jobs:
         if: inputs.publish_coverage_report
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
-          path: ${{ runner.temp }}\reportgenerator
+          path: ${{ runner.temp }}/reportgenerator
           key: ${{ runner.os }}-reportgenerator
           restore-keys: ${{ runner.os }}-reportgenerator
 
@@ -187,9 +191,9 @@ jobs:
         shell: pwsh
         run: |
           "$HOME/.dotnet/tools" >> $env:GITHUB_PATH
-          "${{ runner.temp }}\dotnet-coverage" >> $env:GITHUB_PATH
-          "${{ runner.temp }}\reportgenerator" >> $env:GITHUB_PATH
-          "${{ runner.temp }}\resharper-tools" >> $env:GITHUB_PATH
+          "${{ runner.temp }}/dotnet-coverage" >> $env:GITHUB_PATH
+          "${{ runner.temp }}/reportgenerator" >> $env:GITHUB_PATH
+          "${{ runner.temp }}/resharper-tools" >> $env:GITHUB_PATH
 
       - name: Apply tag version
         id: apply_version
@@ -229,29 +233,29 @@ jobs:
         if: steps.cache-dotnet-coverage.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          New-Item -Path "${{ runner.temp }}\dotnet-coverage" -ItemType Directory -Force | Out-Null
-          dotnet tool install dotnet-coverage --tool-path "${{ runner.temp }}\dotnet-coverage"
+          New-Item -Path "${{ runner.temp }}/dotnet-coverage" -ItemType Directory -Force | Out-Null
+          dotnet tool install dotnet-coverage --tool-path "${{ runner.temp }}/dotnet-coverage"
 
       - name: Install SonarQube Scanner for .NET
         if: steps.cache-sonar-scanner.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          New-Item -Path ${{ runner.temp }}\scanner -ItemType Directory
-          dotnet tool update dotnet-sonarscanner --tool-path ${{ runner.temp }}\scanner
+          New-Item -Path "${{ runner.temp }}/scanner" -ItemType Directory -Force | Out-Null
+          dotnet tool update dotnet-sonarscanner --tool-path "${{ runner.temp }}/scanner"
 
       - name: Install JetBrains ReSharper Global Tools
         if: inputs.run_resharper_inspectcode && steps.cache-resharper-tools.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          New-Item -Path "${{ runner.temp }}\resharper-tools" -ItemType Directory -Force | Out-Null
-          dotnet tool install JetBrains.ReSharper.GlobalTools --tool-path "${{ runner.temp }}\resharper-tools"
+          New-Item -Path "${{ runner.temp }}/resharper-tools" -ItemType Directory -Force | Out-Null
+          dotnet tool install JetBrains.ReSharper.GlobalTools --tool-path "${{ runner.temp }}/resharper-tools"
 
       - name: Install ReportGenerator tool
         if: inputs.publish_coverage_report && steps.cache-reportgenerator-tool.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          New-Item -Path "${{ runner.temp }}\reportgenerator" -ItemType Directory -Force | Out-Null
-          dotnet tool install dotnet-reportgenerator-globaltool --tool-path "${{ runner.temp }}\reportgenerator"
+          New-Item -Path "${{ runner.temp }}/reportgenerator" -ItemType Directory -Force | Out-Null
+          dotnet tool install dotnet-reportgenerator-globaltool --tool-path "${{ runner.temp }}/reportgenerator"
 
       - name: Restore dependencies
         shell: pwsh
@@ -267,7 +271,7 @@ jobs:
           sonar_token: ${{ secrets.sonar_token }}
           sonar_host_url: ${{ inputs.sonar_host_url }}
           settings_file: ${{ inputs.sonar_settings_file }}
-          scanner_path: ${{ runner.temp }}\scanner\dotnet-sonarscanner
+          scanner_path: ${{ runner.temp }}/scanner/dotnet-sonarscanner
           run_resharper_inspectcode: ${{ inputs.run_resharper_inspectcode }}
           resharper_report_path: ${{ inputs.run_resharper_inspectcode && env.RESHARPER_REPORT_PATH || '' }}
           event_name: ${{ github.event_name }}
@@ -320,30 +324,14 @@ jobs:
 
       - name: End Sonar analysis
         shell: pwsh
+        env:
+          SONAR_TOKEN: ${{ secrets.sonar_token }}
         run: |
-          ${{ runner.temp }}\scanner\dotnet-sonarscanner end /d:sonar.token="${{ secrets.sonar_token }}"
+          & "${{ runner.temp }}/scanner/dotnet-sonarscanner" end
 
-      - name: Publish test results on Linux
-        if: always() && inputs.publish_test_results && runner.os == 'Linux'
-        uses: EnricoMi/publish-unit-test-result-action/linux@c950f6fb443cb5af20a377fd0dfaa78838901040 # v2.23.0
-        with:
-          check_name: Test Results
-          comment_mode: off
-          files: |
-            ${{ env.TEST_RESULTS_DIRECTORY }}/**/*.trx
-
-      - name: Publish test results on Windows
-        if: always() && inputs.publish_test_results && runner.os == 'Windows'
-        uses: EnricoMi/publish-unit-test-result-action/windows@c950f6fb443cb5af20a377fd0dfaa78838901040 # v2.23.0
-        with:
-          check_name: Test Results
-          comment_mode: off
-          files: |
-            ${{ env.TEST_RESULTS_DIRECTORY }}/**/*.trx
-
-      - name: Publish test results on macOS
-        if: always() && inputs.publish_test_results && runner.os == 'macOS'
-        uses: EnricoMi/publish-unit-test-result-action/macos@c950f6fb443cb5af20a377fd0dfaa78838901040 # v2.23.0
+      - name: Publish test results
+        if: always() && inputs.publish_test_results
+        uses: EnricoMi/publish-unit-test-result-action@c950f6fb443cb5af20a377fd0dfaa78838901040 # v2.23.0
         with:
           check_name: Test Results
           comment_mode: off

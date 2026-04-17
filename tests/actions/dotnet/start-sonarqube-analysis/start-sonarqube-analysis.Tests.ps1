@@ -3,70 +3,9 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\..\.."))
 $scriptPath = Join-Path $repoRoot ".github/actions/dotnet/start-sonarqube-analysis/start-sonarqube-analysis.ps1"
-$failures = New-Object System.Collections.Generic.List[string]
 
-function New-TestDirectory {
-  $path = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString("N"))
-  New-Item -ItemType Directory -Path $path | Out-Null
-  return $path
-}
-
-function Assert-Equal {
-  param(
-    $Actual,
-    $Expected,
-    [string]$Message
-  )
-
-  if ($Actual -ne $Expected) {
-    throw "$Message Expected '$Expected', got '$Actual'."
-  }
-}
-
-function Assert-True {
-  param(
-    [bool]$Condition,
-    [string]$Message
-  )
-
-  if (-not $Condition) {
-    throw $Message
-  }
-}
-
-function Assert-Throws {
-  param(
-    [scriptblock]$ScriptBlock,
-    [string]$Message
-  )
-
-  $didThrow = $false
-  try {
-    & $ScriptBlock
-  } catch {
-    $didThrow = $true
-  }
-
-  if (-not $didThrow) {
-    throw $Message
-  }
-}
-
-function Invoke-TestCase {
-  param(
-    [string]$Name,
-    [scriptblock]$ScriptBlock
-  )
-
-  try {
-    & $ScriptBlock
-    Write-Host "[PASS] $Name"
-  } catch {
-    $message = "$Name`n$($_.Exception.Message)"
-    $failures.Add($message) | Out-Null
-    Write-Host "[FAIL] $message"
-  }
-}
+Import-Module -Force (Join-Path $repoRoot "tests/_shared/TestFramework.psm1")
+Reset-TestFramework
 
 Invoke-TestCase -Name "starts pull request analysis with pull request arguments" -ScriptBlock {
   $workingDirectory = New-TestDirectory
@@ -75,6 +14,7 @@ Invoke-TestCase -Name "starts pull request analysis with pull request arguments"
 
   try {
     $env:GITHUB_WORKSPACE = $workingDirectory
+    $env:SONAR_TOKEN = "token-value"
     $global:CapturedSonarScannerArguments = @()
 
     function global:dotnet-sonarscanner {
@@ -90,7 +30,6 @@ Invoke-TestCase -Name "starts pull request analysis with pull request arguments"
       -SonarProvider "sonarcloud" `
       -ProjectKey "demo-project" `
       -SonarOrganization "demo-org" `
-      -SonarToken "token-value" `
       -SonarHostUrl "https://sonar.example.com" `
       -SettingsFile "config/SonarQube.Analysis.xml" `
       -RunReSharperInspectCode "true" `
@@ -107,10 +46,12 @@ Invoke-TestCase -Name "starts pull request analysis with pull request arguments"
     Assert-True -Condition ($global:CapturedSonarScannerArguments -contains '/d:sonar.pullrequest.base=main') -Message "The pull request base argument was not passed."
     Assert-True -Condition ($global:CapturedSonarScannerArguments -contains "/s:$expectedSettingsPath") -Message "The settings file path should be resolved from the workspace."
     Assert-True -Condition ($global:CapturedSonarScannerArguments -contains "/d:sonar.resharper.cs.reportPath=$expectedReportPath") -Message "The ReSharper report path should be resolved from the workspace."
+    Assert-True -Condition (-not ($global:CapturedSonarScannerArguments -match '^/d:sonar\.token=')) -Message "The Sonar token should not be passed as a CLI argument."
   } finally {
     Remove-Item Function:\global:dotnet-sonarscanner -ErrorAction SilentlyContinue
     Remove-Variable CapturedSonarScannerArguments -Scope Global -ErrorAction SilentlyContinue
     Remove-Item Env:GITHUB_WORKSPACE -ErrorAction SilentlyContinue
+    Remove-Item Env:SONAR_TOKEN -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $workingDirectory -Recurse -Force
   }
 }
@@ -120,6 +61,7 @@ Invoke-TestCase -Name "starts branch analysis with branch argument" -ScriptBlock
 
   try {
     $env:GITHUB_WORKSPACE = $workingDirectory
+    $env:SONAR_TOKEN = "token-value"
     $global:CapturedSonarScannerArguments = @()
 
     function global:dotnet-sonarscanner {
@@ -134,7 +76,6 @@ Invoke-TestCase -Name "starts branch analysis with branch argument" -ScriptBlock
     & $scriptPath `
       -SonarProvider "sonarqube" `
       -ProjectKey "demo-project" `
-      -SonarToken "token-value" `
       -SonarHostUrl "https://sonar.example.com" `
       -SettingsFile "SonarQube.Analysis.xml" `
       -RunReSharperInspectCode "true" `
@@ -149,6 +90,7 @@ Invoke-TestCase -Name "starts branch analysis with branch argument" -ScriptBlock
     Remove-Item Function:\global:dotnet-sonarscanner -ErrorAction SilentlyContinue
     Remove-Variable CapturedSonarScannerArguments -Scope Global -ErrorAction SilentlyContinue
     Remove-Item Env:GITHUB_WORKSPACE -ErrorAction SilentlyContinue
+    Remove-Item Env:SONAR_TOKEN -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $workingDirectory -Recurse -Force
   }
 }
@@ -158,6 +100,7 @@ Invoke-TestCase -Name "uses the provided scanner path" -ScriptBlock {
 
   try {
     $env:GITHUB_WORKSPACE = $workingDirectory
+    $env:SONAR_TOKEN = "token-value"
     $global:CapturedScannerPath = ""
     $global:CapturedSonarScannerArguments = @()
 
@@ -174,7 +117,6 @@ Invoke-TestCase -Name "uses the provided scanner path" -ScriptBlock {
     & $scriptPath `
       -SonarProvider "sonarqube" `
       -ProjectKey "demo-project" `
-      -SonarToken "token-value" `
       -SonarHostUrl "https://sonar.example.com" `
       -SettingsFile "SonarQube.Analysis.xml" `
       -ScannerPath "custom-sonarscanner" `
@@ -189,6 +131,7 @@ Invoke-TestCase -Name "uses the provided scanner path" -ScriptBlock {
     Remove-Variable CapturedScannerPath -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable CapturedSonarScannerArguments -Scope Global -ErrorAction SilentlyContinue
     Remove-Item Env:GITHUB_WORKSPACE -ErrorAction SilentlyContinue
+    Remove-Item Env:SONAR_TOKEN -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $workingDirectory -Recurse -Force
   }
 }
@@ -198,6 +141,7 @@ Invoke-TestCase -Name "starts tag analysis with project version argument" -Scrip
 
   try {
     $env:GITHUB_WORKSPACE = $workingDirectory
+    $env:SONAR_TOKEN = "token-value"
     $global:CapturedSonarScannerArguments = @()
 
     function global:dotnet-sonarscanner {
@@ -212,7 +156,6 @@ Invoke-TestCase -Name "starts tag analysis with project version argument" -Scrip
     & $scriptPath `
       -SonarProvider "sonarqube" `
       -ProjectKey "demo-project" `
-      -SonarToken "token-value" `
       -SonarHostUrl "https://sonar.example.com" `
       -SettingsFile "SonarQube.Analysis.xml" `
       -RunReSharperInspectCode "false" `
@@ -227,6 +170,7 @@ Invoke-TestCase -Name "starts tag analysis with project version argument" -Scrip
     Remove-Item Function:\global:dotnet-sonarscanner -ErrorAction SilentlyContinue
     Remove-Variable CapturedSonarScannerArguments -Scope Global -ErrorAction SilentlyContinue
     Remove-Item Env:GITHUB_WORKSPACE -ErrorAction SilentlyContinue
+    Remove-Item Env:SONAR_TOKEN -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $workingDirectory -Recurse -Force
   }
 }
@@ -236,6 +180,7 @@ Invoke-TestCase -Name "skips the ReSharper report argument when the flag is fals
 
   try {
     $env:GITHUB_WORKSPACE = $workingDirectory
+    $env:SONAR_TOKEN = "token-value"
     $global:CapturedSonarScannerArguments = @()
 
     function global:dotnet-sonarscanner {
@@ -250,7 +195,6 @@ Invoke-TestCase -Name "skips the ReSharper report argument when the flag is fals
     & $scriptPath `
       -SonarProvider "sonarqube" `
       -ProjectKey "demo-project" `
-      -SonarToken "token-value" `
       -SonarHostUrl "https://sonar.example.com" `
       -SettingsFile "SonarQube.Analysis.xml" `
       -RunReSharperInspectCode "false" `
@@ -263,6 +207,7 @@ Invoke-TestCase -Name "skips the ReSharper report argument when the flag is fals
     Remove-Item Function:\global:dotnet-sonarscanner -ErrorAction SilentlyContinue
     Remove-Variable CapturedSonarScannerArguments -Scope Global -ErrorAction SilentlyContinue
     Remove-Item Env:GITHUB_WORKSPACE -ErrorAction SilentlyContinue
+    Remove-Item Env:SONAR_TOKEN -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $workingDirectory -Recurse -Force
   }
 }
@@ -272,11 +217,11 @@ Invoke-TestCase -Name "fails when ReSharper integration is enabled without a rep
 
   try {
     $env:GITHUB_WORKSPACE = $workingDirectory
+    $env:SONAR_TOKEN = "token-value"
     Assert-Throws -ScriptBlock {
       & $scriptPath `
         -SonarProvider "sonarqube" `
         -ProjectKey "demo-project" `
-        -SonarToken "token-value" `
         -SonarHostUrl "https://sonar.example.com" `
         -SettingsFile "SonarQube.Analysis.xml" `
         -RunReSharperInspectCode "true" `
@@ -286,6 +231,7 @@ Invoke-TestCase -Name "fails when ReSharper integration is enabled without a rep
     } -Message "The script should fail when ReSharper integration is enabled without a report path."
   } finally {
     Remove-Item Env:GITHUB_WORKSPACE -ErrorAction SilentlyContinue
+    Remove-Item Env:SONAR_TOKEN -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $workingDirectory -Recurse -Force
   }
 }
@@ -295,17 +241,39 @@ Invoke-TestCase -Name "fails when SonarCloud organization is missing" -ScriptBlo
 
   try {
     $env:GITHUB_WORKSPACE = $workingDirectory
+    $env:SONAR_TOKEN = "token-value"
     Assert-Throws -ScriptBlock {
       & $scriptPath `
         -SonarProvider "sonarcloud" `
         -ProjectKey "demo-project" `
         -SonarOrganization "" `
-        -SonarToken "token-value" `
         -SonarHostUrl "https://sonarcloud.io" `
         -SettingsFile "SonarQube.Analysis.xml" `
         -EventName "push" `
         -BranchName "main"
     } -Message "The script should fail when SonarCloud organization is missing."
+  } finally {
+    Remove-Item Env:GITHUB_WORKSPACE -ErrorAction SilentlyContinue
+    Remove-Item Env:SONAR_TOKEN -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $workingDirectory -Recurse -Force
+  }
+}
+
+Invoke-TestCase -Name "fails when SONAR_TOKEN environment variable is missing" -ScriptBlock {
+  $workingDirectory = New-TestDirectory
+
+  try {
+    $env:GITHUB_WORKSPACE = $workingDirectory
+    Remove-Item Env:SONAR_TOKEN -ErrorAction SilentlyContinue
+    Assert-Throws -ScriptBlock {
+      & $scriptPath `
+        -SonarProvider "sonarqube" `
+        -ProjectKey "demo-project" `
+        -SonarHostUrl "https://sonar.example.com" `
+        -SettingsFile "SonarQube.Analysis.xml" `
+        -EventName "push" `
+        -BranchName "main"
+    } -Message "The script should fail when SONAR_TOKEN is not set."
   } finally {
     Remove-Item Env:GITHUB_WORKSPACE -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $workingDirectory -Recurse -Force
@@ -317,12 +285,12 @@ Invoke-TestCase -Name "fails when pull request metadata is missing" -ScriptBlock
 
   try {
     $env:GITHUB_WORKSPACE = $workingDirectory
+    $env:SONAR_TOKEN = "token-value"
     Assert-Throws -ScriptBlock {
       & $scriptPath `
         -SonarProvider "sonarcloud" `
         -ProjectKey "demo-project" `
         -SonarOrganization "demo-org" `
-        -SonarToken "token-value" `
         -SonarHostUrl "https://sonar.example.com" `
         -SettingsFile "SonarQube.Analysis.xml" `
         -RunReSharperInspectCode "true" `
@@ -332,12 +300,9 @@ Invoke-TestCase -Name "fails when pull request metadata is missing" -ScriptBlock
     } -Message "The script should fail when pull request metadata is incomplete."
   } finally {
     Remove-Item Env:GITHUB_WORKSPACE -ErrorAction SilentlyContinue
+    Remove-Item Env:SONAR_TOKEN -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $workingDirectory -Recurse -Force
   }
 }
 
-if ($failures.Count -gt 0) {
-  throw ("{0} test(s) failed.`n`n{1}" -f $failures.Count, ($failures -join "`n`n"))
-}
-
-Write-Host "All tests passed."
+Assert-TestFrameworkSuccess
