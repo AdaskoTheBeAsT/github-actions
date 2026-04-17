@@ -3,10 +3,7 @@ param(
   [string]$PackageOutputDirectory = "artifacts/nuget",
 
   [Parameter(Mandatory = $true)]
-  [string]$NugetSourceUrl,
-
-  [Parameter(Mandatory = $true)]
-  [string]$NugetApiKey
+  [string]$NugetSourceUrl
 )
 
 Set-StrictMode -Version Latest
@@ -48,7 +45,7 @@ function Resolve-WorkspaceRelativePath {
 
 Assert-NotWhiteSpace -Value $PackageOutputDirectory -Name "package_output_directory"
 Assert-NotWhiteSpace -Value $NugetSourceUrl -Name "nuget_source_url"
-Assert-NotWhiteSpace -Value $NugetApiKey -Name "nuget_api_key"
+Assert-NotWhiteSpace -Value $env:NUGET_API_KEY -Name "nuget_api_key"
 
 $resolvedOutputDirectory = Resolve-WorkspaceRelativePath -Path $PackageOutputDirectory
 $packages = @(Get-ChildItem -Path $resolvedOutputDirectory -Filter "*.nupkg" -File | Where-Object {
@@ -63,7 +60,7 @@ foreach ($package in $packages) {
   Write-Host "Publishing $($package.Name) to $NugetSourceUrl"
   & dotnet nuget push $package.FullName `
     --source $NugetSourceUrl `
-    --api-key $NugetApiKey `
+    --api-key $env:NUGET_API_KEY `
     --skip-duplicate
 }
 

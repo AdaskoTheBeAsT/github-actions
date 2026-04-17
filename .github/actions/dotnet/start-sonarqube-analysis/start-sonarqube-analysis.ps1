@@ -9,9 +9,6 @@ param(
   [string]$SonarOrganization = "",
 
   [Parameter(Mandatory = $true)]
-  [string]$SonarToken,
-
-  [Parameter(Mandatory = $true)]
   [string]$SonarHostUrl,
 
   [string]$SettingsFile = "SonarQube.Analysis.xml",
@@ -123,7 +120,7 @@ Assert-NotWhiteSpace -Value $ProjectKey -Name "project_key"
 if ($normalizedSonarProvider -eq "sonarcloud") {
   Assert-NotWhiteSpace -Value $SonarOrganization -Name "sonar_organization"
 }
-Assert-NotWhiteSpace -Value $SonarToken -Name "sonar_token"
+Assert-NotWhiteSpace -Value $env:SONAR_TOKEN -Name "sonar_token"
 Assert-NotWhiteSpace -Value $SonarHostUrl -Name "sonar_host_url"
 Assert-NotWhiteSpace -Value $SettingsFile -Name "settings_file"
 Assert-NotWhiteSpace -Value $EventName -Name "event_name"
@@ -139,7 +136,6 @@ $settingsPath = Resolve-WorkspaceRelativePath -Path $SettingsFile
 $beginArguments = @(
   "begin",
   "/k:$ProjectKey",
-  "/d:sonar.token=$SonarToken",
   "/d:sonar.host.url=$SonarHostUrl",
   "/s:$settingsPath"
 )

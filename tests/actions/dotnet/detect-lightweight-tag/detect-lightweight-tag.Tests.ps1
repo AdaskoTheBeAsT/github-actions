@@ -3,13 +3,9 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\..\.."))
 $scriptPath = Join-Path $repoRoot ".github/actions/dotnet/detect-lightweight-tag/detect-lightweight-tag.ps1"
-$failures = New-Object System.Collections.Generic.List[string]
 
-function New-TestDirectory {
-  $path = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString("N"))
-  New-Item -ItemType Directory -Path $path | Out-Null
-  return $path
-}
+Import-Module -Force (Join-Path $repoRoot "tests/_shared/TestFramework.psm1")
+Reset-TestFramework
 
 function Initialize-GitRepository {
   $path = New-TestDirectory
@@ -84,52 +80,6 @@ function Invoke-DetectLightweightTagScript {
   return @{
     OutputPath = $outputPath
     EnvPath = $envPath
-  }
-}
-
-function Assert-Equal {
-  param(
-    $Actual,
-    $Expected,
-    [string]$Message
-  )
-
-  if ($Actual -ne $Expected) {
-    throw "$Message Expected '$Expected', got '$Actual'."
-  }
-}
-
-function Assert-Throws {
-  param(
-    [scriptblock]$ScriptBlock,
-    [string]$Message
-  )
-
-  $didThrow = $false
-  try {
-    & $ScriptBlock
-  } catch {
-    $didThrow = $true
-  }
-
-  if (-not $didThrow) {
-    throw $Message
-  }
-}
-
-function Invoke-TestCase {
-  param(
-    [string]$Name,
-    [scriptblock]$ScriptBlock
-  )
-
-  try {
-    & $ScriptBlock
-    Write-Host "[PASS] $Name"
-  } catch {
-    $message = "$Name`n$($_.Exception.Message)"
-    $failures.Add($message) | Out-Null
-    Write-Host "[FAIL] $message"
   }
 }
 
@@ -215,8 +165,4 @@ Invoke-TestCase -Name "fails when no git ref is available" -ScriptBlock {
   }
 }
 
-if ($failures.Count -gt 0) {
-  throw ("{0} test(s) failed.`n`n{1}" -f $failures.Count, ($failures -join "`n`n"))
-}
-
-Write-Host "All tests passed."
+Assert-TestFrameworkSuccess
