@@ -125,6 +125,10 @@ jobs:
       sonar_project_key: ${{ vars.SONAR_PROJECT_KEY }}
       sonar_organization: ${{ vars.SONAR_ORGANIZATION }}
       dotnet_versions: ${{ vars.DOTNET_VERSIONS }}
+      tool_version_dotnet_coverage: ${{ vars.TOOL_VERSION_DOTNET_COVERAGE }}
+      tool_version_reportgenerator: ${{ vars.TOOL_VERSION_REPORTGENERATOR }}
+      tool_version_resharper: ${{ vars.TOOL_VERSION_RESHARPER }}
+      tool_version_sonar_scanner: ${{ vars.TOOL_VERSION_SONAR_SCANNER }}
       use_global_json: true
       strict_build: true
       deterministic_build: true
@@ -155,6 +159,10 @@ jobs:
       sonar_project_key: ${{ vars.SONAR_PROJECT_KEY }}
       sonar_organization: ${{ vars.SONAR_ORGANIZATION }}
       dotnet_versions: ${{ vars.DOTNET_VERSIONS }}
+      tool_version_dotnet_coverage: ${{ vars.TOOL_VERSION_DOTNET_COVERAGE }}
+      tool_version_reportgenerator: ${{ vars.TOOL_VERSION_REPORTGENERATOR }}
+      tool_version_resharper: ${{ vars.TOOL_VERSION_RESHARPER }}
+      tool_version_sonar_scanner: ${{ vars.TOOL_VERSION_SONAR_SCANNER }}
       use_global_json: true
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
