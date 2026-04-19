@@ -162,7 +162,7 @@ if ($EventName.Equals("pull_request", [System.StringComparison]::OrdinalIgnoreCa
   )
 } elseif (Test-TagRef -Value $GitRef) {
   Assert-NotWhiteSpace -Value $RefName -Name "ref_name"
-  $beginArguments += "/d:sonar.projectVersion=$RefName"
+  $beginArguments += "/v:$RefName"
 } else {
   Assert-NotWhiteSpace -Value $BranchName -Name "branch_name"
   $beginArguments += "/d:sonar.branch.name=$BranchName"

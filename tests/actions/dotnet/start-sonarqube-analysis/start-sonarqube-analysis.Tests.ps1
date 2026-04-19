@@ -163,7 +163,7 @@ Invoke-TestCase -Name "starts tag analysis with project version argument" -Scrip
       -GitRef "refs/tags/v1.2.3" `
       -RefName "v1.2.3"
 
-    Assert-True -Condition ($global:CapturedSonarScannerArguments -contains '/d:sonar.projectVersion=v1.2.3') -Message "The tag analysis argument was not passed."
+    Assert-True -Condition ($global:CapturedSonarScannerArguments -contains '/v:v1.2.3') -Message "The tag analysis argument was not passed."
     Assert-True -Condition (-not ($global:CapturedSonarScannerArguments -match "branch.name")) -Message "Branch analysis argument should not be present for tag analysis."
     Assert-True -Condition (-not ($global:CapturedSonarScannerArguments -match "pullrequest")) -Message "Pull request arguments should not be present for tag analysis."
   } finally {
