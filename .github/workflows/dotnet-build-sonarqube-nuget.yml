@@ -450,6 +450,15 @@ jobs:
             throw "Secret 'nuget_api_key' is required when publishing packages from a lightweight tag."
           }
 
+      - name: Build solution in Release for packaging
+        if: steps.lightweight_tag.outputs.is_lightweight_tag == 'true'
+        shell: pwsh
+        run: |
+          dotnet build "${{ inputs.solution_name }}" `
+            --no-restore `
+            --configuration Release `
+            -p:TreatWarningsAsErrors=false
+
       - name: Pack NuGet packages
         if: steps.lightweight_tag.outputs.is_lightweight_tag == 'true'
         shell: pwsh
@@ -459,6 +468,7 @@ jobs:
 
           dotnet pack "${{ inputs.solution_name }}" `
             --no-restore `
+            --no-build `
             --configuration Release `
             -o $outputDirectory
 
