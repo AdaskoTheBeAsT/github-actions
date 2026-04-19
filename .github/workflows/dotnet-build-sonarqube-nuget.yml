@@ -378,9 +378,27 @@ jobs:
         run: |
           & "${{ runner.temp }}/scanner/dotnet-sonarscanner" end
 
-      - name: Publish test results
-        if: always() && inputs.publish_test_results
-        uses: EnricoMi/publish-unit-test-result-action@c950f6fb443cb5af20a377fd0dfaa78838901040 # v2.23.0
+      - name: Publish test results on Linux
+        if: always() && inputs.publish_test_results && runner.os == 'Linux'
+        uses: EnricoMi/publish-unit-test-result-action/linux@c950f6fb443cb5af20a377fd0dfaa78838901040 # v2.23.0
+        with:
+          check_name: Test Results
+          comment_mode: off
+          files: |
+            ${{ env.TEST_RESULTS_DIRECTORY }}/**/*.trx
+
+      - name: Publish test results on Windows
+        if: always() && inputs.publish_test_results && runner.os == 'Windows'
+        uses: EnricoMi/publish-unit-test-result-action/windows@c950f6fb443cb5af20a377fd0dfaa78838901040 # v2.23.0
+        with:
+          check_name: Test Results
+          comment_mode: off
+          files: |
+            ${{ env.TEST_RESULTS_DIRECTORY }}/**/*.trx
+
+      - name: Publish test results on macOS
+        if: always() && inputs.publish_test_results && runner.os == 'macOS'
+        uses: EnricoMi/publish-unit-test-result-action/macos@c950f6fb443cb5af20a377fd0dfaa78838901040 # v2.23.0
         with:
           check_name: Test Results
           comment_mode: off
