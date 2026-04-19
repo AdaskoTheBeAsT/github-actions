@@ -42,7 +42,8 @@ on:
         type: boolean
         default: true
       run_resharper_inspectcode:
-        description: When true, install and run JetBrains ReSharper InspectCode for non-tag builds
+        description: When true, install and run JetBrains ReSharper InspectCode for
+          non-tag builds
         required: false
         type: boolean
         default: true
@@ -52,7 +53,8 @@ on:
         type: boolean
         default: true
       publish_coverage_report:
-        description: When true, generate and publish the coverage HTML artifact and workflow summary
+        description: When true, generate and publish the coverage HTML artifact and
+          workflow summary
         required: false
         type: boolean
         default: true
@@ -103,6 +105,34 @@ on:
         required: false
         type: boolean
         default: true
+      tool_version_sonar_scanner:
+        description: Version of the dotnet-sonarscanner global tool to install.
+        required: false
+        type: string
+        default: "11.2.1"
+      tool_version_resharper:
+        description: Version of the JetBrains.ReSharper.GlobalTools global tool to install.
+        required: false
+        type: string
+        default: "2026.1.0.1"
+      tool_version_dotnet_coverage:
+        description: Version of the dotnet-coverage global tool to install.
+        required: false
+        type: string
+        default: "18.6.2"
+      tool_version_reportgenerator:
+        description: Version of the dotnet-reportgenerator-globaltool to install.
+        required: false
+        type: string
+        default: "5.5.5"
+      tool_cache_salt:
+        description: >-
+          Salt appended to every tool cache key. Bump this value to force a
+          global refresh of all cached .NET global tools (useful for emergency
+          invalidation independent of version bumps).
+        required: false
+        type: string
+        default: "v1"
     secrets:
       sonar_token:
         required: false
@@ -147,8 +177,10 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/scanner
-          key: ${{ runner.os }}-sonar-scanner
-          restore-keys: ${{ runner.os }}-sonar-scanner
+          key: ${{ runner.os }}-sonar-scanner-${{ inputs.tool_version_sonar_scanner }}-${{
+            inputs.tool_cache_salt }}
+          restore-keys: ${{ runner.os }}-sonar-scanner-${{
+            inputs.tool_version_sonar_scanner }}-${{ inputs.tool_cache_salt }}
 
       - name: Cache JetBrains ReSharper Global Tools
         id: cache-resharper-tools
@@ -156,16 +188,20 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/resharper-tools
-          key: ${{ runner.os }}-resharper-tools
-          restore-keys: ${{ runner.os }}-resharper-tools
+          key: ${{ runner.os }}-resharper-tools-${{ inputs.tool_version_resharper }}-${{
+            inputs.tool_cache_salt }}
+          restore-keys: ${{ runner.os }}-resharper-tools-${{ inputs.tool_version_resharper
+            }}-${{ inputs.tool_cache_salt }}
 
       - name: Cache dotnet-coverage tool
         id: cache-dotnet-coverage
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/dotnet-coverage
-          key: ${{ runner.os }}-dotnet-coverage
-          restore-keys: ${{ runner.os }}-dotnet-coverage
+          key: ${{ runner.os }}-dotnet-coverage-${{ inputs.tool_version_dotnet_coverage
+            }}-${{ inputs.tool_cache_salt }}
+          restore-keys: ${{ runner.os }}-dotnet-coverage-${{
+            inputs.tool_version_dotnet_coverage }}-${{ inputs.tool_cache_salt }}
 
       - name: Cache ReportGenerator tool
         id: cache-reportgenerator-tool
@@ -173,8 +209,10 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/reportgenerator
-          key: ${{ runner.os }}-reportgenerator
-          restore-keys: ${{ runner.os }}-reportgenerator
+          key: ${{ runner.os }}-reportgenerator-${{ inputs.tool_version_reportgenerator
+            }}-${{ inputs.tool_cache_salt }}
+          restore-keys: ${{ runner.os }}-reportgenerator-${{
+            inputs.tool_version_reportgenerator }}-${{ inputs.tool_cache_salt }}
 
       - name: Detect lightweight tag
         id: lightweight_tag
@@ -234,28 +272,38 @@ jobs:
         shell: pwsh
         run: |
           New-Item -Path "${{ runner.temp }}/dotnet-coverage" -ItemType Directory -Force | Out-Null
-          dotnet tool install dotnet-coverage --tool-path "${{ runner.temp }}/dotnet-coverage"
+          dotnet tool install dotnet-coverage `
+            --version "${{ inputs.tool_version_dotnet_coverage }}" `
+            --tool-path "${{ runner.temp }}/dotnet-coverage"
 
       - name: Install SonarQube Scanner for .NET
         if: steps.cache-sonar-scanner.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           New-Item -Path "${{ runner.temp }}/scanner" -ItemType Directory -Force | Out-Null
-          dotnet tool update dotnet-sonarscanner --tool-path "${{ runner.temp }}/scanner"
+          dotnet tool install dotnet-sonarscanner `
+            --version "${{ inputs.tool_version_sonar_scanner }}" `
+            --tool-path "${{ runner.temp }}/scanner"
 
       - name: Install JetBrains ReSharper Global Tools
-        if: inputs.run_resharper_inspectcode && steps.cache-resharper-tools.outputs.cache-hit != 'true'
+        if: inputs.run_resharper_inspectcode &&
+          steps.cache-resharper-tools.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           New-Item -Path "${{ runner.temp }}/resharper-tools" -ItemType Directory -Force | Out-Null
-          dotnet tool install JetBrains.ReSharper.GlobalTools --tool-path "${{ runner.temp }}/resharper-tools"
+          dotnet tool install JetBrains.ReSharper.GlobalTools `
+            --version "${{ inputs.tool_version_resharper }}" `
+            --tool-path "${{ runner.temp }}/resharper-tools"
 
       - name: Install ReportGenerator tool
-        if: inputs.publish_coverage_report && steps.cache-reportgenerator-tool.outputs.cache-hit != 'true'
+        if: inputs.publish_coverage_report &&
+          steps.cache-reportgenerator-tool.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           New-Item -Path "${{ runner.temp }}/reportgenerator" -ItemType Directory -Force | Out-Null
-          dotnet tool install dotnet-reportgenerator-globaltool --tool-path "${{ runner.temp }}/reportgenerator"
+          dotnet tool install dotnet-reportgenerator-globaltool `
+            --version "${{ inputs.tool_version_reportgenerator }}" `
+            --tool-path "${{ runner.temp }}/reportgenerator"
 
       - name: Restore dependencies
         shell: pwsh
@@ -273,7 +321,8 @@ jobs:
           settings_file: ${{ inputs.sonar_settings_file }}
           scanner_path: ${{ runner.temp }}/scanner/dotnet-sonarscanner
           run_resharper_inspectcode: ${{ inputs.run_resharper_inspectcode }}
-          resharper_report_path: ${{ inputs.run_resharper_inspectcode && env.RESHARPER_REPORT_PATH || '' }}
+          resharper_report_path: ${{ inputs.run_resharper_inspectcode &&
+            env.RESHARPER_REPORT_PATH || '' }}
           event_name: ${{ github.event_name }}
           git_ref: ${{ github.ref }}
           ref_name: ${{ github.ref_name }}
@@ -339,7 +388,8 @@ jobs:
             ${{ env.TEST_RESULTS_DIRECTORY }}/**/*.trx
 
       - name: Generate coverage report
-        if: always() && inputs.publish_coverage_report && hashFiles('coverage.xml') != ''
+        if: always() && inputs.publish_coverage_report && hashFiles('coverage.xml') !=
+          ''
         shell: pwsh
         run: |
           $reportDirectory = Join-Path $env:GITHUB_WORKSPACE $env:COVERAGE_REPORT_DIRECTORY
@@ -351,14 +401,16 @@ jobs:
             -reporttypes:"Html;MarkdownSummaryGithub"
 
       - name: Upload coverage report artifact
-        if: always() && inputs.publish_coverage_report && hashFiles('coverage.xml') != ''
+        if: always() && inputs.publish_coverage_report && hashFiles('coverage.xml') !=
+          ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: coverage-report
           path: ${{ env.COVERAGE_REPORT_DIRECTORY }}
 
       - name: Add coverage summary to workflow summary
-        if: always() && inputs.publish_coverage_report && hashFiles('coverage.xml') != ''
+        if: always() && inputs.publish_coverage_report && hashFiles('coverage.xml') !=
+          ''
         shell: pwsh
         run: |
           $reportDirectory = Join-Path $env:GITHUB_WORKSPACE $env:COVERAGE_REPORT_DIRECTORY

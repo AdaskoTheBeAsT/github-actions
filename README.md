@@ -58,6 +58,11 @@ This workflow performs its own `actions/checkout`, so the calling workflow does 
 - `strip_v_prefix`: strips `v`/`V` from tags like `v1.2.3`
 - `strict_build`: when `true` (default), runs `dotnet build` with `--no-incremental` and `-t:Rebuild` to defeat incremental caching and force every MSBuild target to rerun; disables the class of regressions that only surface after a clean build
 - `deterministic_build`: when `true` (default), sets `ContinuousIntegrationBuild=true` as a job-level environment variable so every `dotnet restore`, `build`, `test`, and `pack` call produces deterministic output (stable PDBs, SourceLink paths, no machine-specific timestamps or paths)
+- `tool_version_sonar_scanner`: pinned version of the `dotnet-sonarscanner` global tool installed into the cache
+- `tool_version_resharper`: pinned version of the `JetBrains.ReSharper.GlobalTools` global tool installed into the cache
+- `tool_version_dotnet_coverage`: pinned version of the `dotnet-coverage` global tool installed into the cache
+- `tool_version_reportgenerator`: pinned version of the `dotnet-reportgenerator-globaltool` installed into the cache
+- `tool_cache_salt`: salt appended to every tool cache key; bump to force a global refresh of all cached .NET global tools independently of a version bump
 
 #### Required workflow secrets
 - `sonar_token`: required for pull request and branch builds
@@ -88,6 +93,11 @@ You do not need to define every repository variable. Some inputs already have de
 - `STRIP_V_PREFIX` → defaults to `true`
 - `STRICT_BUILD` → defaults to `true`
 - `DETERMINISTIC_BUILD` → defaults to `true`
+- `TOOL_VERSION_SONAR_SCANNER` → defaults to the latest stable `dotnet-sonarscanner`
+- `TOOL_VERSION_RESHARPER` → defaults to the latest stable `JetBrains.ReSharper.GlobalTools`
+- `TOOL_VERSION_DOTNET_COVERAGE` → defaults to the latest stable `dotnet-coverage`
+- `TOOL_VERSION_REPORTGENERATOR` → defaults to the latest stable `dotnet-reportgenerator-globaltool`
+- `TOOL_CACHE_SALT` → defaults to `v1`
 
 #### Example usage
 ```yaml
@@ -172,7 +182,36 @@ Two inputs control how aggressively CI invalidates caches and how reproducible t
 
 - These switches affect only the **build** step. `dotnet pack` is not given `-t:Rebuild` because that would wipe and re-emit signed assemblies right after the Build step produced them; it still picks up `ContinuousIntegrationBuild=true` from job env, so the packed output remains deterministic.
 
-- If you want to invalidate the SDK tool caches as well (SonarScanner, dotnet-coverage, ReportGenerator, ReSharper tools), bump the cache keys in your fork — the workflow currently reuses them across runs, which is orthogonal to `strict_build`.
+#### Pinned .NET global tool versions and caching
+The four .NET global tools used by the workflow are installed into version-scoped caches so CI runs are reproducible and upgrades are explicit.
+
+- **Tools managed this way**
+  - `dotnet-sonarscanner` → controlled by `tool_version_sonar_scanner`
+  - `JetBrains.ReSharper.GlobalTools` → controlled by `tool_version_resharper`
+  - `dotnet-coverage` → controlled by `tool_version_dotnet_coverage`
+  - `dotnet-reportgenerator-globaltool` → controlled by `tool_version_reportgenerator`
+
+- **How the cache key is built**
+  - `${{ runner.os }}-<tool>-<tool_version_*>-<tool_cache_salt>`
+  - the install step uses `dotnet tool install --version "<tool_version_*>"` so the cache contents exactly match the requested version
+  - cache hit → install step is skipped; cache miss → the pinned version is installed and the cache is saved under the new key
+
+- **How to pick up a new release of a tool**
+  1. find the new stable version on NuGet
+  2. bump the corresponding `TOOL_VERSION_*` repository/organization variable (or the input in the caller workflow)
+  3. next run will cache-miss on the new key and install the new version
+  4. the old cache entry is evicted by GitHub's LRU/age policy
+
+- **Emergency-invalidate every tool cache at once**
+  - bump `TOOL_CACHE_SALT` (for example from `v1` to `v2`) without changing any version
+  - all four tool caches miss on the next run and reinstall
+  - useful when a cache was poisoned or when rolling out across many consumer repos quickly
+
+- **Why this matters for a reusable workflow**
+  - every caller repo can keep its own pinned versions via `vars.TOOL_VERSION_*`
+  - builds become reproducible across runs — you are not silently stuck on "whatever was latest on day one"
+  - upgrades are auditable PR diffs, not invisible cache contents
+  - Dependabot or a scheduled bump PR can track these versions without touching workflow YAML
 
 ## Composite actions
 
@@ -220,6 +259,11 @@ Use repository variables for non-sensitive workflow inputs:
 - `STRIP_V_PREFIX`
 - `STRICT_BUILD`
 - `DETERMINISTIC_BUILD`
+- `TOOL_VERSION_SONAR_SCANNER`
+- `TOOL_VERSION_RESHARPER`
+- `TOOL_VERSION_DOTNET_COVERAGE`
+- `TOOL_VERSION_REPORTGENERATOR`
+- `TOOL_CACHE_SALT`
 
 Recommended minimum setup:
 - define `SOLUTION_NAME`
