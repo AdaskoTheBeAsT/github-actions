@@ -133,6 +133,15 @@ on:
         required: false
         type: string
         default: "v1"
+      test_frameworks:
+        description: >-
+          Comma-separated list of target frameworks to execute tests against
+          (e.g. "net8.0,net9.0,net10.0"). When empty, dotnet test runs against
+          every TFM in the solution. Useful when some TFMs (e.g. .NET Framework
+          net4xx) cannot execute on the chosen runs_on (e.g. ubuntu-latest).
+        required: false
+        type: string
+        default: ""
     secrets:
       sonar_token:
         required: false
@@ -354,6 +363,7 @@ jobs:
           solution_name: ${{ inputs.solution_name }}
           coverage_settings_file: ${{ inputs.coverage_settings_file }}
           results_directory: ${{ env.TEST_RESULTS_DIRECTORY }}
+          test_frameworks: ${{ inputs.test_frameworks }}
 
       - name: Run ReSharper InspectCode
         if: inputs.run_resharper_inspectcode
