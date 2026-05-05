@@ -21,6 +21,12 @@ inputs:
     description: Coverage output file path
     required: false
     default: coverage.xml
+  test_frameworks:
+    description: >-
+      Comma-separated list of target frameworks to test (e.g. "net8.0,net9.0").
+      When empty, dotnet test runs against every TFM in the solution.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -34,4 +40,5 @@ runs:
           -CoverageSettingsFile "${{ inputs.coverage_settings_file }}" `
           -Configuration "${{ inputs.configuration }}" `
           -ResultsDirectory "${{ inputs.results_directory }}" `
-          -CoverageOutputFile "${{ inputs.coverage_output_file }}"
+          -CoverageOutputFile "${{ inputs.coverage_output_file }}" `
+          -TestFrameworks "${{ inputs.test_frameworks }}"
