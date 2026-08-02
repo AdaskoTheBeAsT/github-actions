@@ -58,10 +58,10 @@ This workflow performs its own `actions/checkout`, so the calling workflow does 
 - `strip_v_prefix`: strips `v`/`V` from tags like `v1.2.3`
 - `strict_build`: when `true` (default), runs `dotnet build` with `--no-incremental` and `-t:Rebuild` to defeat incremental caching and force every MSBuild target to rerun; disables the class of regressions that only surface after a clean build
 - `deterministic_build`: when `true` (default), sets `ContinuousIntegrationBuild=true` as a job-level environment variable so every `dotnet restore`, `build`, `test`, and `pack` call produces deterministic output (stable PDBs, SourceLink paths, no machine-specific timestamps or paths)
-- `tool_version_sonar_scanner`: pinned version of the `dotnet-sonarscanner` global tool installed into the cache
-- `tool_version_resharper`: pinned version of the `JetBrains.ReSharper.GlobalTools` global tool installed into the cache
-- `tool_version_dotnet_coverage`: pinned version of the `dotnet-coverage` global tool installed into the cache
-- `tool_version_reportgenerator`: pinned version of the `dotnet-reportgenerator-globaltool` installed into the cache
+- `tool_version_sonar_scanner`: version of the `dotnet-sonarscanner` global tool installed into the cache; empty (the default) resolves and installs the latest stable version from nuget.org, set an explicit version to pin it
+- `tool_version_resharper`: version of the `JetBrains.ReSharper.GlobalTools` global tool installed into the cache; empty (the default) resolves and installs the latest stable version from nuget.org, set an explicit version to pin it
+- `tool_version_dotnet_coverage`: version of the `dotnet-coverage` global tool installed into the cache; empty (the default) resolves and installs the latest stable version from nuget.org, set an explicit version to pin it
+- `tool_version_reportgenerator`: version of the `dotnet-reportgenerator-globaltool` installed into the cache; empty (the default) resolves and installs the latest stable version from nuget.org, set an explicit version to pin it
 - `tool_cache_salt`: salt appended to every tool cache key; bump to force a global refresh of all cached .NET global tools independently of a version bump
 
 #### Required workflow secrets
@@ -190,8 +190,8 @@ Two inputs control how aggressively CI invalidates caches and how reproducible t
 
 - These switches affect only the **build** step. `dotnet pack` is not given `-t:Rebuild` because that would wipe and re-emit signed assemblies right after the Build step produced them; it still picks up `ContinuousIntegrationBuild=true` from job env, so the packed output remains deterministic.
 
-#### Pinned .NET global tool versions and caching
-The four .NET global tools used by the workflow are installed into version-scoped caches so CI runs are reproducible and upgrades are explicit.
+#### .NET global tool versions and caching
+The four .NET global tools used by the workflow are installed into version-scoped caches. By default each tool tracks its latest stable release; supply an explicit version to pin it so runs stay byte-for-byte reproducible and upgrades become an auditable diff.
 
 - **Tools managed this way**
   - `dotnet-sonarscanner` → controlled by `tool_version_sonar_scanner`
@@ -199,16 +199,20 @@ The four .NET global tools used by the workflow are installed into version-scope
   - `dotnet-coverage` → controlled by `tool_version_dotnet_coverage`
   - `dotnet-reportgenerator-globaltool` → controlled by `tool_version_reportgenerator`
 
+- **An empty version means "latest stable" (and empty is the default)**
+  - the `Resolve .NET global tool versions` step runs before the cache steps and, for every `tool_version_*` input that is null/empty/whitespace, queries `https://api.nuget.org/v3-flatcontainer/<package-id>/index.json` and picks the highest non-prerelease version
+  - pinned inputs are passed through untouched (only trimmed); nothing is queried for them
+  - the resolved version is exposed as a step output and used for both the cache key and `dotnet tool install --version`, so an unpinned tool still gets a version-scoped cache that flips to a new key as soon as a newer release ships
+  - the resolved versions are printed in the step log, so every run records exactly which tool versions it used
+
 - **How the cache key is built**
-  - `${{ runner.os }}-<tool>-<tool_version_*>-<tool_cache_salt>`
-  - the install step uses `dotnet tool install --version "<tool_version_*>"` so the cache contents exactly match the requested version
-  - cache hit → install step is skipped; cache miss → the pinned version is installed and the cache is saved under the new key
+  - `${{ runner.os }}-<tool>-<resolved-version>-<tool_cache_salt>`
+  - the install step uses `dotnet tool install --version "<resolved-version>"` so the cache contents exactly match the version in the key
+  - cache hit → install step is skipped; cache miss → that version is installed and the cache is saved under the new key
 
 - **How to pick up a new release of a tool**
-  1. find the new stable version on NuGet
-  2. bump the corresponding `TOOL_VERSION_*` repository/organization variable (or the input in the caller workflow)
-  3. next run will cache-miss on the new key and install the new version
-  4. the old cache entry is evicted by GitHub's LRU/age policy
+  - unpinned (the default): nothing to do, the next run resolves the newer version, cache-misses on the new key and installs it
+  - pinned: find the new stable version on NuGet, bump the corresponding `TOOL_VERSION_*` repository/organization variable (or the input in the caller workflow); the next run cache-misses on the new key and installs it, and the old cache entry is evicted by GitHub's LRU/age policy
 
 - **Emergency-invalidate every tool cache at once**
   - bump `TOOL_CACHE_SALT` (for example from `v1` to `v2`) without changing any version
@@ -216,10 +220,10 @@ The four .NET global tools used by the workflow are installed into version-scope
   - useful when a cache was poisoned or when rolling out across many consumer repos quickly
 
 - **Why this matters for a reusable workflow**
-  - every caller repo can keep its own pinned versions via `vars.TOOL_VERSION_*`
-  - builds become reproducible across runs — you are not silently stuck on "whatever was latest on day one"
-  - upgrades are auditable PR diffs, not invisible cache contents
-  - Dependabot or a scheduled bump PR can track these versions without touching workflow YAML
+  - out of the box every caller stays current instead of being silently stuck on "whatever was latest on day one"
+  - any caller repo that needs stability can pin its own versions via `vars.TOOL_VERSION_*`, making upgrades auditable PR diffs rather than invisible cache contents
+  - either way the cache key carries the concrete resolved version, so cached contents always match what was requested
+  - a scheduled bump PR can track pinned versions without touching workflow YAML
 
 ## Composite actions
 
