@@ -21,6 +21,7 @@ Invoke-TestCase -Name "runs dotnet-coverage with the expected test command" -Scr
       )
 
       $global:CapturedCoverageArguments = @($Arguments)
+      $global:LASTEXITCODE = 0
     }
 
     & $scriptPath `
@@ -48,6 +49,71 @@ Invoke-TestCase -Name "fails when the solution name is empty" -ScriptBlock {
   Assert-Throws -ScriptBlock {
     & $scriptPath -SolutionName " "
   } -Message "The script should fail when solution_name is empty."
+}
+
+Invoke-TestCase -Name "exports env_vars and env_secrets entries to the test process" -ScriptBlock {
+  $workingDirectory = New-TestDirectory
+
+  try {
+    $env:GITHUB_WORKSPACE = $workingDirectory
+    $env:TEST_ENV_VARS = "MYAPP_TEST_MODE=ci`n`n# a comment`nMYAPP_EMPTY="
+    $env:TEST_ENV_SECRETS = "  MYAPP_LICENSE_KEY = super secret = value  "
+    $global:CapturedTestEnvironment = @{}
+
+    function global:dotnet-coverage {
+      param(
+        [Parameter(ValueFromRemainingArguments = $true)]
+        [string[]]$Arguments
+      )
+
+      foreach ($name in @("MYAPP_TEST_MODE", "MYAPP_EMPTY", "MYAPP_LICENSE_KEY", "TEST_ENV_VARS", "TEST_ENV_SECRETS")) {
+        $global:CapturedTestEnvironment[$name] = [System.Environment]::GetEnvironmentVariable($name)
+      }
+
+      $global:LASTEXITCODE = 0
+    }
+
+    $hostOutput = @(& $scriptPath -SolutionName "My.sln" 6>&1 | ForEach-Object { [string]$_ })
+
+    Assert-Equal -Actual $global:CapturedTestEnvironment["MYAPP_TEST_MODE"] -Expected "ci" -Message "A non-secret pair should be exported."
+    Assert-Equal -Actual $global:CapturedTestEnvironment["MYAPP_EMPTY"] -Expected "" -Message "An entry without a value should be exported as an empty string."
+    Assert-Equal -Actual $global:CapturedTestEnvironment["MYAPP_LICENSE_KEY"] -Expected "super secret = value" -Message "Only the first '=' should separate name and value."
+    Assert-Equal -Actual $global:CapturedTestEnvironment["TEST_ENV_VARS"] -Expected $null -Message "The raw env_vars payload should not reach the test process."
+    Assert-Equal -Actual $global:CapturedTestEnvironment["TEST_ENV_SECRETS"] -Expected $null -Message "The raw env_secrets payload should not reach the test process."
+    Assert-True -Condition ($hostOutput -contains "::add-mask::super secret = value") -Message "Every secret value should be masked."
+    Assert-True -Condition (@($hostOutput -like "::add-mask::*").Count -eq 1) -Message "Only secret values should be masked."
+  } finally {
+    Remove-Item Function:\global:dotnet-coverage -ErrorAction SilentlyContinue
+    Remove-Variable CapturedTestEnvironment -Scope Global -ErrorAction SilentlyContinue
+    foreach ($name in @("GITHUB_WORKSPACE", "TEST_ENV_VARS", "TEST_ENV_SECRETS", "MYAPP_TEST_MODE", "MYAPP_EMPTY", "MYAPP_LICENSE_KEY")) {
+      Remove-Item -LiteralPath "Env:\$name" -ErrorAction SilentlyContinue
+    }
+    Remove-Item -LiteralPath $workingDirectory -Recurse -Force
+  }
+}
+
+Invoke-TestCase -Name "fails when an env entry is not in NAME=VALUE format" -ScriptBlock {
+  try {
+    $env:TEST_ENV_VARS = "MYAPP_TEST_MODE"
+
+    Assert-Throws -ScriptBlock {
+      & $scriptPath -SolutionName "My.sln"
+    } -Message "The script should fail when an env entry has no '=' separator."
+  } finally {
+    Remove-Item Env:TEST_ENV_VARS -ErrorAction SilentlyContinue
+  }
+}
+
+Invoke-TestCase -Name "fails when an env entry uses an invalid variable name" -ScriptBlock {
+  try {
+    $env:TEST_ENV_SECRETS = "MY-APP LICENSE=abc"
+
+    Assert-Throws -ScriptBlock {
+      & $scriptPath -SolutionName "My.sln"
+    } -Message "The script should fail when an env entry name is not a valid environment variable name."
+  } finally {
+    Remove-Item Env:TEST_ENV_SECRETS -ErrorAction SilentlyContinue
+  }
 }
 
 Assert-TestFrameworkSuccess

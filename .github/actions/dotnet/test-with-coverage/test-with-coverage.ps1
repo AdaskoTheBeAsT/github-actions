@@ -69,6 +69,51 @@ function Convert-ToCommandArgument {
   return $Value
 }
 
+function Set-TestEnvironmentVariable {
+  param(
+    [AllowNull()]
+    [AllowEmptyString()]
+    [string]$Payload,
+
+    [Parameter(Mandatory = $true)]
+    [string]$Source,
+
+    [switch]$Mask
+  )
+
+  if ([string]::IsNullOrWhiteSpace($Payload)) {
+    return
+  }
+
+  foreach ($line in ($Payload -split "`r?`n")) {
+    $entry = $line.Trim()
+
+    if ([string]::IsNullOrWhiteSpace($entry) -or $entry.StartsWith("#")) {
+      continue
+    }
+
+    $separatorIndex = $entry.IndexOf("=")
+    if ($separatorIndex -lt 1) {
+      throw "Input '$Source' contains an entry that is not in NAME=VALUE format."
+    }
+
+    $name = $entry.Substring(0, $separatorIndex).Trim()
+    $value = $entry.Substring($separatorIndex + 1).Trim()
+
+    if ($name -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
+      throw "Input '$Source' contains an invalid environment variable name '$name'."
+    }
+
+    # A secret handed to the workflow is masked as one blob, so every value parsed out of it needs its own mask.
+    if ($Mask -and -not [string]::IsNullOrWhiteSpace($value)) {
+      Write-Host "::add-mask::$value"
+    }
+
+    Write-Host "Setting environment variable '$name' from '$Source' for the test run."
+    Set-Item -LiteralPath "Env:\$name" -Value $value
+  }
+}
+
 function Invoke-DotnetCoverage {
   param(
     [string[]]$DotnetTestArgs,
@@ -100,6 +145,19 @@ Assert-NotWhiteSpace -Value $CoverageSettingsFile -Name "coverage_settings_file"
 Assert-NotWhiteSpace -Value $Configuration -Name "configuration"
 Assert-NotWhiteSpace -Value $ResultsDirectory -Name "results_directory"
 Assert-NotWhiteSpace -Value $CoverageOutputFile -Name "coverage_output_file"
+
+Set-TestEnvironmentVariable `
+  -Payload ([System.Environment]::GetEnvironmentVariable("TEST_ENV_VARS")) `
+  -Source "env_vars"
+
+Set-TestEnvironmentVariable `
+  -Payload ([System.Environment]::GetEnvironmentVariable("TEST_ENV_SECRETS")) `
+  -Source "env_secrets" `
+  -Mask
+
+# The raw payloads are not meant to reach the test process itself.
+Remove-Item Env:\TEST_ENV_VARS -ErrorAction SilentlyContinue
+Remove-Item Env:\TEST_ENV_SECRETS -ErrorAction SilentlyContinue
 
 $coverageSettingsPath = Resolve-WorkspaceRelativePath -Path $CoverageSettingsFile
 

@@ -63,10 +63,13 @@ This workflow performs its own `actions/checkout`, so the calling workflow does 
 - `tool_version_dotnet_coverage`: version of the `dotnet-coverage` global tool installed into the cache; empty (the default) resolves and installs the latest stable version from nuget.org, set an explicit version to pin it
 - `tool_version_reportgenerator`: version of the `dotnet-reportgenerator-globaltool` installed into the cache; empty (the default) resolves and installs the latest stable version from nuget.org, set an explicit version to pin it
 - `tool_cache_salt`: salt appended to every tool cache key; bump to force a global refresh of all cached .NET global tools independently of a version bump
+- `test_frameworks`: comma-separated list of target frameworks to run tests against, for example `net8.0,net9.0`; empty (the default) runs every TFM in the solution
+- `test_env`: newline-separated `NAME=VALUE` pairs exported to the test process only; use it for non-sensitive test configuration and see [Passing extra environment variables to the test step](#passing-extra-environment-variables-to-the-test-step)
 
 #### Required workflow secrets
 - `sonar_token`: required for pull request and branch builds
 - `nuget_api_key`: required when publishing packages from a lightweight tag
+- `test_env_secrets`: optional newline-separated `NAME=VALUE` pairs exported to the test process only, for license keys and other credentials the tests need
 
 #### Which values must be defined
 You do not need to define every repository variable. Some inputs already have defaults in the reusable workflow.
@@ -172,6 +175,36 @@ jobs:
 - coverage HTML is uploaded as the `coverage-report` workflow artifact
 - a Markdown coverage summary is appended to the workflow summary
 - `ReportGenerator` is used to create the HTML report and summary
+
+#### Passing extra environment variables to the test step
+Some test suites need extra environment variables at runtime, for example a commercial component license key. GitHub reusable workflows cannot accept a map of inputs or a dynamically named secret, so both channels take a **newline-separated `NAME=VALUE` payload**:
+
+- `test_env` input → non-sensitive values
+- `test_env_secrets` secret → sensitive values, masked in the log
+
+```yaml
+jobs:
+  ci:
+    uses: AdaskoTheBeAsT/github-actions/.github/workflows/dotnet-build-sonarqube-nuget.yml@main
+    with:
+      solution_name: ${{ vars.SOLUTION_NAME }}
+      sonar_project_key: ${{ vars.SONAR_PROJECT_KEY }}
+      sonar_organization: ${{ vars.SONAR_ORGANIZATION }}
+      test_env: |
+        MYAPP_TEST_MODE=ci
+        MYAPP_TEST_BASE_URL=https://localhost:5001
+    secrets:
+      sonar_token: ${{ secrets.SONAR_TOKEN }}
+      test_env_secrets: |
+        DEVEXPRESS_LICENSE=${{ secrets.DEVEXPRESS_LICENSE }}
+        ASPOSE_LICENSE_KEY=${{ secrets.ASPOSE_LICENSE_KEY }}
+```
+
+- **Scope**: the variables are set in the process that runs `dotnet-coverage collect`, so `dotnet test` and the test host inherit them. They are deliberately **not** written to `$GITHUB_ENV`, so they never leak into the Sonar, pack, or publish steps. They are also not available to the `dotnet build` step, so a license that is checked at *compile* time cannot be supplied this way.
+- **Parsing**: one pair per line, split on the first `=`. Name and value are trimmed, blank lines and lines starting with `#` are ignored, and `NAME=` sets an empty value. A line without `=`, or a name that is not a valid environment variable name (`[A-Za-z_][A-Za-z0-9_]*`), fails the step.
+- **Masking**: a secret passed into a reusable workflow is masked only as one blob, so the step emits `::add-mask::` for every value it parses out of `test_env_secrets`. Names are logged, values are not.
+- **Multi-line values** (a license *file*, a PEM key) do not survive line-based parsing. Base64-encode the value, pass it as a single line, and decode it inside the test setup.
+- The raw payloads are removed from the environment before tests start, so the blob itself is never visible to test code.
 
 #### Build hygiene (`strict_build`, `deterministic_build`)
 Two inputs control how aggressively CI invalidates caches and how reproducible the produced binaries are.
