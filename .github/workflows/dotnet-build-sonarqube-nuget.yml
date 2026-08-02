@@ -154,10 +154,21 @@ on:
         required: false
         type: string
         default: ""
+      test_env:
+        description: >-
+          Newline-separated NAME=VALUE pairs exported to the test process only
+          (for example "MYAPP_TEST_MODE=ci"). Blank lines and lines starting with
+          "#" are ignored. Use the test_env_secrets secret for sensitive values
+          such as license keys.
+        required: false
+        type: string
+        default: ""
     secrets:
       sonar_token:
         required: false
       nuget_api_key:
+        required: false
+      test_env_secrets:
         required: false
 
 permissions:
@@ -447,6 +458,8 @@ jobs:
           coverage_settings_file: ${{ inputs.coverage_settings_file }}
           results_directory: ${{ env.TEST_RESULTS_DIRECTORY }}
           test_frameworks: ${{ inputs.test_frameworks }}
+          env_vars: ${{ inputs.test_env }}
+          env_secrets: ${{ secrets.test_env_secrets }}
 
       - name: Run ReSharper InspectCode
         if: inputs.run_resharper_inspectcode

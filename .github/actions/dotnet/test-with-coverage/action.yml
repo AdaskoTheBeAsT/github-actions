@@ -27,6 +27,18 @@ inputs:
       When empty, dotnet test runs against every TFM in the solution.
     required: false
     default: ""
+  env_vars:
+    description: >-
+      Newline-separated NAME=VALUE pairs exported to the test process. Blank
+      lines and lines starting with "#" are ignored. Non-sensitive values only.
+    required: false
+    default: ""
+  env_secrets:
+    description: >-
+      Newline-separated NAME=VALUE pairs exported to the test process and masked
+      in the log. Use for license keys and other credentials the tests need.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -34,6 +46,9 @@ runs:
     - name: Run tests with coverage
       shell: pwsh
       working-directory: ${{ github.workspace }}
+      env:
+        TEST_ENV_VARS: ${{ inputs.env_vars }}
+        TEST_ENV_SECRETS: ${{ inputs.env_secrets }}
       run: |
         & "${{ github.action_path }}/test-with-coverage.ps1" `
           -SolutionName "${{ inputs.solution_name }}" `
