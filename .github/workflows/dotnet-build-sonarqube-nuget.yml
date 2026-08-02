@@ -106,25 +106,37 @@ on:
         type: boolean
         default: true
       tool_version_sonar_scanner:
-        description: Version of the dotnet-sonarscanner global tool to install.
+        description: >-
+          Version of the dotnet-sonarscanner global tool to install. Defaults to
+          empty, which resolves and installs the latest stable version published
+          on nuget.org. Set an explicit version to pin it.
         required: false
         type: string
-        default: "11.2.1"
+        default: ""
       tool_version_resharper:
-        description: Version of the JetBrains.ReSharper.GlobalTools global tool to install.
+        description: >-
+          Version of the JetBrains.ReSharper.GlobalTools global tool to install.
+          Defaults to empty, which resolves and installs the latest stable
+          version published on nuget.org. Set an explicit version to pin it.
         required: false
         type: string
-        default: "2026.1.0.1"
+        default: ""
       tool_version_dotnet_coverage:
-        description: Version of the dotnet-coverage global tool to install.
+        description: >-
+          Version of the dotnet-coverage global tool to install. Defaults to
+          empty, which resolves and installs the latest stable version published
+          on nuget.org. Set an explicit version to pin it.
         required: false
         type: string
-        default: "18.6.2"
+        default: ""
       tool_version_reportgenerator:
-        description: Version of the dotnet-reportgenerator-globaltool to install.
+        description: >-
+          Version of the dotnet-reportgenerator-globaltool to install. Defaults
+          to empty, which resolves and installs the latest stable version
+          published on nuget.org. Set an explicit version to pin it.
         required: false
         type: string
-        default: "5.5.5"
+        default: ""
       tool_cache_salt:
         description: >-
           Salt appended to every tool cache key. Bump this value to force a
@@ -174,6 +186,77 @@ jobs:
         with:
           fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
 
+      - name: Resolve .NET global tool versions
+        id: tool_versions
+        shell: pwsh
+        env:
+          REQUESTED_SONAR_SCANNER: ${{ inputs.tool_version_sonar_scanner }}
+          REQUESTED_RESHARPER: ${{ inputs.tool_version_resharper }}
+          REQUESTED_DOTNET_COVERAGE: ${{ inputs.tool_version_dotnet_coverage }}
+          REQUESTED_REPORTGENERATOR: ${{ inputs.tool_version_reportgenerator }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Get-LatestStableNuGetVersion {
+            param([Parameter(Mandatory)][string] $PackageId)
+
+            $indexUri = "https://api.nuget.org/v3-flatcontainer/$($PackageId.ToLowerInvariant())/index.json"
+            $index = Invoke-RestMethod -Uri $indexUri -MaximumRetryCount 5 -RetryIntervalSec 5
+
+            $candidates = foreach ($rawVersion in $index.versions) {
+              if ($rawVersion -match '-') {
+                continue
+              }
+
+              $numericVersion = $null
+              if ([version]::TryParse(($rawVersion -split '\+')[0], [ref] $numericVersion)) {
+                [pscustomobject]@{ Raw = $rawVersion; Parsed = $numericVersion }
+              }
+            }
+
+            if (-not $candidates) {
+              throw "Could not determine the latest stable version of '$PackageId' from nuget.org."
+            }
+
+            ($candidates | Sort-Object -Property Parsed | Select-Object -Last 1).Raw
+          }
+
+          $tools = [ordered]@{
+            sonar_scanner = @{ PackageId = 'dotnet-sonarscanner'; Requested = $env:REQUESTED_SONAR_SCANNER }
+            resharper = @{ PackageId = 'JetBrains.ReSharper.GlobalTools'; Requested = $env:REQUESTED_RESHARPER }
+            dotnet_coverage = @{ PackageId = 'dotnet-coverage'; Requested = $env:REQUESTED_DOTNET_COVERAGE }
+            reportgenerator = @{ PackageId = 'dotnet-reportgenerator-globaltool'; Requested = $env:REQUESTED_REPORTGENERATOR }
+          }
+
+          $resolved = New-Object System.Collections.Generic.List[object]
+
+          foreach ($outputName in $tools.Keys) {
+            $tool = $tools[$outputName]
+
+            if ([string]::IsNullOrWhiteSpace($tool.Requested)) {
+              $resolvedVersion = Get-LatestStableNuGetVersion -PackageId $tool.PackageId
+              $source = 'latest stable (nuget.org)'
+              Write-Host "$($tool.PackageId): no version pinned, resolved latest stable $resolvedVersion"
+            }
+            else {
+              $resolvedVersion = $tool.Requested.Trim()
+              $source = 'pinned by input'
+              Write-Host "$($tool.PackageId): using pinned version $resolvedVersion"
+            }
+
+            "$outputName=$resolvedVersion" >> $env:GITHUB_OUTPUT
+
+            $resolved.Add([pscustomobject]@{
+              Tool = $tool.PackageId
+              Version = $resolvedVersion
+              Source = $source
+            }) | Out-Null
+          }
+
+          Write-Host ""
+          Write-Host "Resolved .NET global tool versions:"
+          $resolved | Format-Table -AutoSize | Out-String -Width 200 | Write-Host
+
       - name: Cache SonarQube Cloud packages
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
@@ -186,10 +269,10 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/scanner
-          key: ${{ runner.os }}-sonar-scanner-${{ inputs.tool_version_sonar_scanner }}-${{
-            inputs.tool_cache_salt }}
+          key: ${{ runner.os }}-sonar-scanner-${{
+            steps.tool_versions.outputs.sonar_scanner }}-${{ inputs.tool_cache_salt }}
           restore-keys: ${{ runner.os }}-sonar-scanner-${{
-            inputs.tool_version_sonar_scanner }}-${{ inputs.tool_cache_salt }}
+            steps.tool_versions.outputs.sonar_scanner }}-${{ inputs.tool_cache_salt }}
 
       - name: Cache JetBrains ReSharper Global Tools
         id: cache-resharper-tools
@@ -197,20 +280,20 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/resharper-tools
-          key: ${{ runner.os }}-resharper-tools-${{ inputs.tool_version_resharper }}-${{
-            inputs.tool_cache_salt }}
-          restore-keys: ${{ runner.os }}-resharper-tools-${{ inputs.tool_version_resharper
+          key: ${{ runner.os }}-resharper-tools-${{ steps.tool_versions.outputs.resharper
             }}-${{ inputs.tool_cache_salt }}
+          restore-keys: ${{ runner.os }}-resharper-tools-${{
+            steps.tool_versions.outputs.resharper }}-${{ inputs.tool_cache_salt }}
 
       - name: Cache dotnet-coverage tool
         id: cache-dotnet-coverage
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/dotnet-coverage
-          key: ${{ runner.os }}-dotnet-coverage-${{ inputs.tool_version_dotnet_coverage
-            }}-${{ inputs.tool_cache_salt }}
+          key: ${{ runner.os }}-dotnet-coverage-${{
+            steps.tool_versions.outputs.dotnet_coverage }}-${{ inputs.tool_cache_salt }}
           restore-keys: ${{ runner.os }}-dotnet-coverage-${{
-            inputs.tool_version_dotnet_coverage }}-${{ inputs.tool_cache_salt }}
+            steps.tool_versions.outputs.dotnet_coverage }}-${{ inputs.tool_cache_salt }}
 
       - name: Cache ReportGenerator tool
         id: cache-reportgenerator-tool
@@ -218,10 +301,10 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/reportgenerator
-          key: ${{ runner.os }}-reportgenerator-${{ inputs.tool_version_reportgenerator
-            }}-${{ inputs.tool_cache_salt }}
+          key: ${{ runner.os }}-reportgenerator-${{
+            steps.tool_versions.outputs.reportgenerator }}-${{ inputs.tool_cache_salt }}
           restore-keys: ${{ runner.os }}-reportgenerator-${{
-            inputs.tool_version_reportgenerator }}-${{ inputs.tool_cache_salt }}
+            steps.tool_versions.outputs.reportgenerator }}-${{ inputs.tool_cache_salt }}
 
       - name: Detect lightweight tag
         id: lightweight_tag
@@ -282,7 +365,7 @@ jobs:
         run: |
           New-Item -Path "${{ runner.temp }}/dotnet-coverage" -ItemType Directory -Force | Out-Null
           dotnet tool install dotnet-coverage `
-            --version "${{ inputs.tool_version_dotnet_coverage }}" `
+            --version "${{ steps.tool_versions.outputs.dotnet_coverage }}" `
             --tool-path "${{ runner.temp }}/dotnet-coverage"
 
       - name: Install SonarQube Scanner for .NET
@@ -291,7 +374,7 @@ jobs:
         run: |
           New-Item -Path "${{ runner.temp }}/scanner" -ItemType Directory -Force | Out-Null
           dotnet tool install dotnet-sonarscanner `
-            --version "${{ inputs.tool_version_sonar_scanner }}" `
+            --version "${{ steps.tool_versions.outputs.sonar_scanner }}" `
             --tool-path "${{ runner.temp }}/scanner"
 
       - name: Install JetBrains ReSharper Global Tools
@@ -301,7 +384,7 @@ jobs:
         run: |
           New-Item -Path "${{ runner.temp }}/resharper-tools" -ItemType Directory -Force | Out-Null
           dotnet tool install JetBrains.ReSharper.GlobalTools `
-            --version "${{ inputs.tool_version_resharper }}" `
+            --version "${{ steps.tool_versions.outputs.resharper }}" `
             --tool-path "${{ runner.temp }}/resharper-tools"
 
       - name: Install ReportGenerator tool
@@ -311,7 +394,7 @@ jobs:
         run: |
           New-Item -Path "${{ runner.temp }}/reportgenerator" -ItemType Directory -Force | Out-Null
           dotnet tool install dotnet-reportgenerator-globaltool `
-            --version "${{ inputs.tool_version_reportgenerator }}" `
+            --version "${{ steps.tool_versions.outputs.reportgenerator }}" `
             --tool-path "${{ runner.temp }}/reportgenerator"
 
       - name: Restore dependencies
