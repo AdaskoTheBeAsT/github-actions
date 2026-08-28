@@ -1,5 +1,5 @@
 name: Test with Coverage
-description: Run dotnet test wrapped by dotnet-coverage.
+description: Run dotnet test with VSTest or Microsoft Testing Platform coverage.
 
 inputs:
   solution_name:
@@ -27,6 +27,10 @@ inputs:
       When empty, dotnet test runs against every TFM in the solution.
     required: false
     default: ""
+  runner_type:
+    description: Resolved test runner, either vstest or mtp
+    required: false
+    default: vstest
   env_vars:
     description: >-
       Newline-separated NAME=VALUE pairs exported to the test process. Blank
@@ -56,4 +60,5 @@ runs:
           -Configuration "${{ inputs.configuration }}" `
           -ResultsDirectory "${{ inputs.results_directory }}" `
           -CoverageOutputFile "${{ inputs.coverage_output_file }}" `
-          -TestFrameworks "${{ inputs.test_frameworks }}"
+          -TestFrameworks "${{ inputs.test_frameworks }}" `
+          -RunnerType "${{ inputs.runner_type }}"

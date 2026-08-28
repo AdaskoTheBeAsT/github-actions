@@ -4,7 +4,10 @@ param(
   [string]$DotnetVersions = "",
 
   [AllowEmptyString()]
-  [string]$UseGlobalJson = "false"
+  [string]$UseGlobalJson = "false",
+
+  [AllowEmptyString()]
+  [string]$RunnerType = "auto"
 )
 
 Set-StrictMode -Version Latest
@@ -42,6 +45,59 @@ function Get-NormalizedDotnetVersions {
   return $versions
 }
 
+function Get-WorkspacePath {
+  if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_WORKSPACE)) {
+    return $env:GITHUB_WORKSPACE.Trim()
+  }
+
+  return (Get-Location).Path
+}
+
+function Get-ResolvedRunnerType {
+  param(
+    [AllowEmptyString()]
+    [string]$RequestedRunnerType
+  )
+
+  $normalizedRunnerType = $RequestedRunnerType.Trim().ToLowerInvariant()
+  if ($normalizedRunnerType -notin @("auto", "vstest", "mtp")) {
+    throw "Input 'runner_type' must be one of: auto, vstest, mtp."
+  }
+
+  if ($normalizedRunnerType -ne "auto") {
+    return $normalizedRunnerType
+  }
+
+  $globalJsonPath = Join-Path (Get-WorkspacePath) "global.json"
+  if (-not (Test-Path -LiteralPath $globalJsonPath -PathType Leaf)) {
+    return "vstest"
+  }
+
+  try {
+    $globalJson = Get-Content -LiteralPath $globalJsonPath -Raw | ConvertFrom-Json
+  } catch {
+    throw "Failed to read test runner from '$globalJsonPath': $($_.Exception.Message)"
+  }
+
+  $testProperty = $globalJson.PSObject.Properties["test"]
+  $runnerProperty = if ($null -ne $testProperty -and $null -ne $testProperty.Value) {
+    $testProperty.Value.PSObject.Properties["runner"]
+  } else {
+    $null
+  }
+
+  if ($null -ne $runnerProperty -and
+      -not [string]::IsNullOrWhiteSpace([string]$runnerProperty.Value) -and
+      ([string]$runnerProperty.Value).Equals(
+        "Microsoft.Testing.Platform",
+        [System.StringComparison]::OrdinalIgnoreCase
+      )) {
+    return "mtp"
+  }
+
+  return "vstest"
+}
+
 function Set-GitHubOutputValue {
   param(
     [string]$Name,
@@ -75,6 +131,7 @@ if ([string]::IsNullOrWhiteSpace($env:GITHUB_OUTPUT)) {
 }
 
 $versions = @(Get-NormalizedDotnetVersions -MultipleVersions $DotnetVersions)
+$resolvedRunnerType = Get-ResolvedRunnerType -RequestedRunnerType $RunnerType
 $globalJsonFile = ""
 if (Test-InputIsTrue -Value $UseGlobalJson) {
   $globalJsonFile = "global.json"
@@ -86,6 +143,7 @@ if ($versions.Count -eq 0 -and [string]::IsNullOrWhiteSpace($globalJsonFile)) {
 
 Set-GitHubOutputValues -Name "versions" -Values $versions
 Set-GitHubOutputValue -Name "global_json_file" -Value $globalJsonFile
+Set-GitHubOutputValue -Name "runner_type" -Value $resolvedRunnerType
 
 $resolvedSources = New-Object System.Collections.Generic.List[string]
 if ($versions.Count -gt 0) {
@@ -96,3 +154,4 @@ if (-not [string]::IsNullOrWhiteSpace($globalJsonFile)) {
 }
 
 Write-Host "Resolved setup-dotnet inputs: $($resolvedSources -join '; ')"
+Write-Host "Resolved test runner: $resolvedRunnerType"

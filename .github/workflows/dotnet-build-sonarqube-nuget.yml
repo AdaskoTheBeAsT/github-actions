@@ -41,6 +41,13 @@ on:
         required: false
         type: boolean
         default: true
+      runner_type:
+        description: >-
+          Test runner to use: auto, vstest, or mtp. Auto selects mtp when
+          global.json configures Microsoft.Testing.Platform; otherwise vstest.
+        required: false
+        type: string
+        default: auto
       run_resharper_inspectcode:
         description: When true, install and run JetBrains ReSharper InspectCode for
           non-tag builds
@@ -322,11 +329,13 @@ jobs:
         uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/detect-lightweight-tag@v1
 
       - name: Setup dotnet
+        id: setup_dotnet
         uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/setup-dotnet-sdks@v1
         with:
           dotnet_versions: ${{ inputs.dotnet_versions }}
           use_global_json: ${{ inputs.use_global_json }}
           show_info: ${{ inputs.show_dotnet_info }}
+          runner_type: ${{ inputs.runner_type }}
 
       - name: Add .NET tool directories to PATH
         shell: pwsh
@@ -458,6 +467,7 @@ jobs:
           coverage_settings_file: ${{ inputs.coverage_settings_file }}
           results_directory: ${{ env.TEST_RESULTS_DIRECTORY }}
           test_frameworks: ${{ inputs.test_frameworks }}
+          runner_type: ${{ steps.setup_dotnet.outputs.runner_type }}
           env_vars: ${{ inputs.test_env }}
           env_secrets: ${{ secrets.test_env_secrets }}
 

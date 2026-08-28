@@ -12,7 +12,9 @@ param(
   [string]$CoverageOutputFile = "coverage.xml",
 
   [AllowEmptyString()]
-  [string]$TestFrameworks = ""
+  [string]$TestFrameworks = "",
+
+  [string]$RunnerType = "vstest"
 )
 
 Set-StrictMode -Version Latest
@@ -50,6 +52,42 @@ function Resolve-WorkspaceRelativePath {
   }
 
   return (Join-Path (Get-WorkspacePath) $Path)
+}
+
+function Test-NuGetPackageResolved {
+  param(
+    [string]$PackageId
+  )
+
+  $packagePrefix = "$PackageId/"
+  $assetsFiles = Get-ChildItem `
+    -LiteralPath (Get-WorkspacePath) `
+    -Filter "project.assets.json" `
+    -File `
+    -Recurse `
+    -ErrorAction SilentlyContinue
+
+  foreach ($assetsFile in $assetsFiles) {
+    try {
+      $assets = Get-Content -LiteralPath $assetsFile.FullName -Raw | ConvertFrom-Json
+    } catch {
+      Write-Warning "Could not inspect NuGet assets file '$($assetsFile.FullName)': $($_.Exception.Message)"
+      continue
+    }
+
+    $librariesProperty = $assets.PSObject.Properties["libraries"]
+    if ($null -eq $librariesProperty -or $null -eq $librariesProperty.Value) {
+      continue
+    }
+
+    foreach ($library in $librariesProperty.Value.PSObject.Properties) {
+      if ($library.Name.StartsWith($packagePrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+      }
+    }
+  }
+
+  return $false
 }
 
 function Convert-ToCommandArgument {
@@ -140,11 +178,38 @@ function Invoke-DotnetCoverage {
   }
 }
 
+function Merge-CoverageFiles {
+  param(
+    [string[]]$CoverageFiles,
+    [string]$CoverageOutput
+  )
+
+  if ($CoverageFiles.Count -eq 0) {
+    throw "No coverage files were generated."
+  }
+
+  Write-Host "Merging coverage from $($CoverageFiles.Count) test run(s)."
+  $mergeArguments = @("merge") + $CoverageFiles + @(
+    "-o", $CoverageOutput,
+    "-f", "xml"
+  )
+  & dotnet-coverage @mergeArguments
+  if ($LASTEXITCODE -ne 0) {
+    throw "dotnet-coverage merge exited with code $LASTEXITCODE"
+  }
+}
+
 Assert-NotWhiteSpace -Value $SolutionName -Name "solution_name"
 Assert-NotWhiteSpace -Value $CoverageSettingsFile -Name "coverage_settings_file"
 Assert-NotWhiteSpace -Value $Configuration -Name "configuration"
 Assert-NotWhiteSpace -Value $ResultsDirectory -Name "results_directory"
 Assert-NotWhiteSpace -Value $CoverageOutputFile -Name "coverage_output_file"
+Assert-NotWhiteSpace -Value $RunnerType -Name "runner_type"
+
+$normalizedRunnerType = $RunnerType.Trim().ToLowerInvariant()
+if ($normalizedRunnerType -notin @("vstest", "mtp")) {
+  throw "Input 'runner_type' must be either 'vstest' or 'mtp'."
+}
 
 Set-TestEnvironmentVariable `
   -Payload ([System.Environment]::GetEnvironmentVariable("TEST_ENV_VARS")) `
@@ -168,19 +233,44 @@ if (-not [string]::IsNullOrWhiteSpace($TestFrameworks)) {
     Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
 }
 
-$baseTestArgs = @(
-  $SolutionName,
+$commonTestArgs = @(
   "--no-restore",
   "--no-build",
   "--configuration", $Configuration,
-  "--logger", "trx",
   "--results-directory", $ResultsDirectory,
   "-p:TreatWarningsAsErrors=false",
   "-p:TestTfmsInParallel=false"
 )
 
+$runnerDisplayName = if ($normalizedRunnerType -eq "vstest") {
+  "VSTest"
+} else {
+  "Microsoft Testing Platform"
+}
+
+$baseTestArgs = if ($normalizedRunnerType -eq "vstest") {
+  @(
+    $SolutionName
+  ) + $commonTestArgs + @(
+    "--logger", "trx"
+  )
+} else {
+  @(
+    "--solution", $SolutionName
+  ) + $commonTestArgs + @(
+    "--report-trx"
+  )
+}
+
+if ($normalizedRunnerType -eq "mtp" -and
+    $env:GITHUB_ACTIONS -eq "true" -and
+    (Test-NuGetPackageResolved -PackageId "Microsoft.Testing.Extensions.GitHubActionsReport")) {
+  Write-Host "Microsoft.Testing.Extensions.GitHubActionsReport detected; enabling the GitHub Actions report."
+  $baseTestArgs += "--report-gh"
+}
+
 if ($frameworks.Count -eq 0) {
-  Write-Host "Running tests with coverage for all TFMs."
+  Write-Host "Running $runnerDisplayName tests with coverage for all TFMs."
   Invoke-DotnetCoverage `
     -DotnetTestArgs $baseTestArgs `
     -CoverageOutput $CoverageOutputFile `
@@ -189,7 +279,7 @@ if ($frameworks.Count -eq 0) {
   return
 }
 
-Write-Host "Running tests with coverage for TFMs: $($frameworks -join ', ')"
+Write-Host "Running $runnerDisplayName tests with coverage for TFMs: $($frameworks -join ', ')"
 
 $intermediateDir = Join-Path (Get-WorkspacePath) "coverage-intermediate"
 New-Item -ItemType Directory -Force -Path $intermediateDir | Out-Null
@@ -208,12 +298,6 @@ foreach ($tfm in $frameworks) {
   $intermediateFiles += $intermediateFile
 }
 
-Write-Host "Merging coverage from $($intermediateFiles.Count) framework(s)."
-$mergeArguments = @("merge") + $intermediateFiles + @(
-  "-o", $CoverageOutputFile,
-  "-f", "xml"
-)
-& dotnet-coverage @mergeArguments
-if ($LASTEXITCODE -ne 0) {
-  throw "dotnet-coverage merge exited with code $LASTEXITCODE"
-}
+Merge-CoverageFiles `
+  -CoverageFiles $intermediateFiles `
+  -CoverageOutput $CoverageOutputFile

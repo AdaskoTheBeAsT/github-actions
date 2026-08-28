@@ -125,6 +125,83 @@ Invoke-TestCase -Name "supports dotnet_versions together with global.json" -Scri
   }
 }
 
+Invoke-TestCase -Name "auto detects Microsoft Testing Platform from global.json" -ScriptBlock {
+  $testDirectory = New-TestDirectory
+
+  try {
+    $outputPath = Join-Path $testDirectory "github_output.txt"
+    $env:GITHUB_OUTPUT = $outputPath
+    $env:GITHUB_WORKSPACE = $testDirectory
+    '{"sdk":{"version":"10.0.100"},"test":{"runner":"Microsoft.Testing.Platform"}}' |
+      Set-Content -LiteralPath (Join-Path $testDirectory "global.json")
+
+    & $scriptPath -DotnetVersions "10.0.x" -RunnerType "auto"
+
+    $runnerType = Get-GitHubOutputValue -Path $outputPath -Name "runner_type"
+    Assert-SequenceEqual -Actual $runnerType -Expected @("mtp") -Message "Auto should detect the MTP runner from global.json."
+  } finally {
+    Remove-Item Env:GITHUB_OUTPUT -ErrorAction SilentlyContinue
+    Remove-Item Env:GITHUB_WORKSPACE -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $testDirectory -Recurse -Force
+  }
+}
+
+Invoke-TestCase -Name "auto defaults to VSTest without an MTP global.json setting" -ScriptBlock {
+  $testDirectory = New-TestDirectory
+
+  try {
+    $outputPath = Join-Path $testDirectory "github_output.txt"
+    $env:GITHUB_OUTPUT = $outputPath
+    $env:GITHUB_WORKSPACE = $testDirectory
+
+    & $scriptPath -DotnetVersions "9.0.x"
+
+    $runnerType = Get-GitHubOutputValue -Path $outputPath -Name "runner_type"
+    Assert-SequenceEqual -Actual $runnerType -Expected @("vstest") -Message "Auto should default to VSTest."
+  } finally {
+    Remove-Item Env:GITHUB_OUTPUT -ErrorAction SilentlyContinue
+    Remove-Item Env:GITHUB_WORKSPACE -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $testDirectory -Recurse -Force
+  }
+}
+
+Invoke-TestCase -Name "honors an explicit runner type" -ScriptBlock {
+  $testDirectory = New-TestDirectory
+
+  try {
+    $outputPath = Join-Path $testDirectory "github_output.txt"
+    $env:GITHUB_OUTPUT = $outputPath
+    $env:GITHUB_WORKSPACE = $testDirectory
+
+    & $scriptPath -DotnetVersions "10.0.x" -RunnerType "MTP"
+
+    $runnerType = Get-GitHubOutputValue -Path $outputPath -Name "runner_type"
+    Assert-SequenceEqual -Actual $runnerType -Expected @("mtp") -Message "An explicit runner type should be normalized and preserved."
+  } finally {
+    Remove-Item Env:GITHUB_OUTPUT -ErrorAction SilentlyContinue
+    Remove-Item Env:GITHUB_WORKSPACE -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $testDirectory -Recurse -Force
+  }
+}
+
+Invoke-TestCase -Name "rejects an unsupported runner type" -ScriptBlock {
+  $testDirectory = New-TestDirectory
+
+  try {
+    $outputPath = Join-Path $testDirectory "github_output.txt"
+    $env:GITHUB_OUTPUT = $outputPath
+    $env:GITHUB_WORKSPACE = $testDirectory
+
+    Assert-Throws -ScriptBlock {
+      & $scriptPath -DotnetVersions "10.0.x" -RunnerType "other"
+    } -Message "An unsupported runner type should fail."
+  } finally {
+    Remove-Item Env:GITHUB_OUTPUT -ErrorAction SilentlyContinue
+    Remove-Item Env:GITHUB_WORKSPACE -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $testDirectory -Recurse -Force
+  }
+}
+
 Invoke-TestCase -Name "fails when GITHUB_OUTPUT is not available" -ScriptBlock {
   Remove-Item Env:GITHUB_OUTPUT -ErrorAction SilentlyContinue
   Assert-Throws -ScriptBlock { & $scriptPath -DotnetVersions "9.0.x" } -Message "The script should fail when GITHUB_OUTPUT is missing."

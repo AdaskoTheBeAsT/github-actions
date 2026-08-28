@@ -47,6 +47,8 @@ This workflow performs its own `actions/checkout`, so the calling workflow does 
 - `dotnet_versions`: comma-separated SDK versions
 - `use_global_json`: also install SDK from root `global.json`
 - `show_dotnet_info`: run `dotnet --info`
+- `runner_type`: `auto` (default), `vstest`, or `mtp`; auto selects MTP when
+  root `global.json` sets `test.runner` to `Microsoft.Testing.Platform`
 - `run_resharper_inspectcode`: install and run ReSharper InspectCode and include its report in Sonar analysis
 - `publish_test_results`: publish TRX results to GitHub checks
 - `publish_coverage_report`: generate and publish coverage HTML and workflow summary
@@ -85,6 +87,7 @@ You do not need to define every repository variable. Some inputs already have de
 - `SONAR_PROVIDER` → defaults to `sonarcloud`
 - `USE_GLOBAL_JSON` → defaults to `false`
 - `SHOW_DOTNET_INFO` → defaults to `true`
+- `RUNNER_TYPE` → defaults to `auto`
 - `RUN_RESHARPER_INSPECTCODE` → defaults to `true`
 - `PUBLISH_TEST_RESULTS` → defaults to `true`
 - `PUBLISH_COVERAGE_REPORT` → defaults to `true`
@@ -133,6 +136,7 @@ jobs:
       tool_version_resharper: ${{ vars.TOOL_VERSION_RESHARPER }}
       tool_version_sonar_scanner: ${{ vars.TOOL_VERSION_SONAR_SCANNER }}
       use_global_json: true
+      runner_type: auto
       strict_build: true
       deterministic_build: true
     secrets:
@@ -177,6 +181,18 @@ jobs:
 - coverage HTML is uploaded as the `coverage-report` workflow artifact
 - a Markdown coverage summary is appended to the workflow summary
 - `ReportGenerator` is used to create the HTML report and summary
+- `runner_type: vstest` keeps the existing `dotnet-coverage collect` command
+- `runner_type: mtp` uses native .NET 10 MTP syntax (`dotnet test --solution`
+  and `--report-trx`) inside `dotnet-coverage collect`; dotnet-coverage
+  aggregates coverage from all test modules in the solution
+- `runner_type: auto` reads the root `global.json`; it selects `mtp` only when
+  `test.runner` is `Microsoft.Testing.Platform`, and otherwise selects `vstest`
+- MTP test projects must provide the `Microsoft.Testing.Extensions.TrxReport`
+  extension for TRX output (it may be included by the selected test SDK profile)
+- when MTP runs on GitHub Actions, the test action checks restored
+  `project.assets.json` files for
+  `Microsoft.Testing.Extensions.GitHubActionsReport`; when found, it adds
+  `--report-gh` to enable native annotations, log groups, and the job summary
 
 #### Passing extra environment variables to the test step
 Some test suites need extra environment variables at runtime, for example a commercial component license key. GitHub reusable workflows cannot accept a map of inputs or a dynamically named secret, so both channels take a **newline-separated `NAME=VALUE` payload**:
@@ -295,6 +311,7 @@ Use repository variables for non-sensitive workflow inputs:
 - `DOTNET_VERSIONS`
 - `USE_GLOBAL_JSON`
 - `SHOW_DOTNET_INFO`
+- `RUNNER_TYPE`
 - `RUN_RESHARPER_INSPECTCODE`
 - `PUBLISH_TEST_RESULTS`
 - `PUBLISH_COVERAGE_REPORT`
