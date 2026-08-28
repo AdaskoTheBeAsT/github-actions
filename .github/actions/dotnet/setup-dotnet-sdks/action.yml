@@ -13,6 +13,17 @@ inputs:
     description: When 'true', run 'dotnet --info' after installation
     required: false
     default: "true"
+  runner_type:
+    description: >-
+      Test runner to use: auto, vstest, or mtp. Auto selects mtp when the root
+      global.json configures Microsoft.Testing.Platform; otherwise vstest.
+    required: false
+    default: auto
+
+outputs:
+  runner_type:
+    description: Resolved test runner, either vstest or mtp
+    value: ${{ steps.resolve_versions.outputs.runner_type }}
 
 runs:
   using: composite
@@ -23,7 +34,8 @@ runs:
       run: |
         & "${{ github.action_path }}/resolve-dotnet-sdk-versions.ps1" `
           -DotnetVersions "${{ inputs.dotnet_versions }}" `
-          -UseGlobalJson "${{ inputs.use_global_json }}"
+          -UseGlobalJson "${{ inputs.use_global_json }}" `
+          -RunnerType "${{ inputs.runner_type }}"
 
     - name: Setup .NET SDKs
       uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5

@@ -51,6 +51,94 @@ Invoke-TestCase -Name "fails when the solution name is empty" -ScriptBlock {
   } -Message "The script should fail when solution_name is empty."
 }
 
+Invoke-TestCase -Name "runs MTP solution tests through dotnet-coverage" -ScriptBlock {
+  $workingDirectory = New-TestDirectory
+
+  try {
+    $env:GITHUB_WORKSPACE = $workingDirectory
+    $global:CapturedCoverageArguments = @()
+
+    function global:dotnet-coverage {
+      param(
+        [Parameter(ValueFromRemainingArguments = $true)]
+        [string[]]$Arguments
+      )
+
+      $global:CapturedCoverageArguments = @($Arguments)
+      $global:LASTEXITCODE = 0
+    }
+
+    & $scriptPath `
+      -SolutionName "src/My Solution.sln" `
+      -CoverageSettingsFile "config/coverage.settings.xml" `
+      -ResultsDirectory "Test Results" `
+      -CoverageOutputFile "artifacts/coverage.xml" `
+      -RunnerType "mtp"
+
+    Assert-Equal -Actual $global:CapturedCoverageArguments[0] -Expected "collect" -Message "MTP should be wrapped by dotnet-coverage collect."
+    Assert-True -Condition ($global:CapturedCoverageArguments[1] -like 'dotnet test --solution "src/My Solution.sln"*') -Message "MTP should use the --solution option followed by the quoted solution path."
+    Assert-True -Condition ($global:CapturedCoverageArguments[1] -like '*--report-trx*') -Message "MTP should request TRX reports."
+    Assert-True -Condition ($global:CapturedCoverageArguments[1] -notlike '*--report-gh*') -Message "MTP should not request the GitHub report when its extension is unavailable."
+    Assert-True -Condition ($global:CapturedCoverageArguments[1] -notlike '*--logger*') -Message "MTP should not use the VSTest logger option."
+    Assert-True -Condition ($global:CapturedCoverageArguments[1] -notlike '*--coverage*') -Message "MTP should let the outer dotnet-coverage process collect coverage."
+    Assert-True -Condition ($global:CapturedCoverageArguments -contains "--settings") -Message "The coverage settings should be passed to dotnet-coverage."
+    Assert-True -Condition ($global:CapturedCoverageArguments -contains (Join-Path $workingDirectory "config\coverage.settings.xml")) -Message "The coverage settings file should be resolved from the workspace."
+    Assert-True -Condition ($global:CapturedCoverageArguments -contains "artifacts/coverage.xml") -Message "dotnet-coverage should use the requested output path."
+  } finally {
+    Remove-Item Function:\global:dotnet-coverage -ErrorAction SilentlyContinue
+    Remove-Variable CapturedCoverageArguments -Scope Global -ErrorAction SilentlyContinue
+    Remove-Item Env:GITHUB_WORKSPACE -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $workingDirectory -Recurse -Force
+  }
+}
+
+Invoke-TestCase -Name "enables the MTP GitHub report when its package is resolved" -ScriptBlock {
+  $workingDirectory = New-TestDirectory
+
+  try {
+    $env:GITHUB_WORKSPACE = $workingDirectory
+    $env:GITHUB_ACTIONS = "true"
+    $assetsDirectory = Join-Path $workingDirectory "tests\Example.Tests\obj"
+    New-Item -ItemType Directory -Force -Path $assetsDirectory | Out-Null
+    @'
+{
+  "libraries": {
+    "Microsoft.Testing.Extensions.GitHubActionsReport/1.0.0": {
+      "type": "package"
+    }
+  }
+}
+'@ | Set-Content -LiteralPath (Join-Path $assetsDirectory "project.assets.json")
+    $global:CapturedCoverageArguments = @()
+
+    function global:dotnet-coverage {
+      param(
+        [Parameter(ValueFromRemainingArguments = $true)]
+        [string[]]$Arguments
+      )
+
+      $global:CapturedCoverageArguments = @($Arguments)
+      $global:LASTEXITCODE = 0
+    }
+
+    & $scriptPath -SolutionName "Example.sln" -RunnerType "mtp"
+
+    Assert-True -Condition ($global:CapturedCoverageArguments[1] -like '*--report-gh*') -Message "MTP should enable the GitHub report when the package is resolved."
+  } finally {
+    Remove-Item Function:\global:dotnet-coverage -ErrorAction SilentlyContinue
+    Remove-Variable CapturedCoverageArguments -Scope Global -ErrorAction SilentlyContinue
+    Remove-Item Env:GITHUB_WORKSPACE -ErrorAction SilentlyContinue
+    Remove-Item Env:GITHUB_ACTIONS -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $workingDirectory -Recurse -Force
+  }
+}
+
+Invoke-TestCase -Name "fails when the runner type is unsupported" -ScriptBlock {
+  Assert-Throws -ScriptBlock {
+    & $scriptPath -SolutionName "My.sln" -RunnerType "other"
+  } -Message "The script should fail when runner_type is unsupported."
+}
+
 Invoke-TestCase -Name "exports env_vars and env_secrets entries to the test process" -ScriptBlock {
   $workingDirectory = New-TestDirectory
 
