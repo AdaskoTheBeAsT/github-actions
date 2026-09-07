@@ -258,7 +258,7 @@ $baseTestArgs = if ($normalizedRunnerType -eq "vstest") {
   @(
     "--solution", $SolutionName
   ) + $commonTestArgs + @(
-    "--report-trx"
+    "--report-xunit-trx"
   )
 }
 
