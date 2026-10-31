@@ -70,7 +70,7 @@ This workflow performs its own `actions/checkout`, so the calling workflow does 
 
 #### Required workflow secrets
 - `sonar_token`: required for pull request and branch builds
-- `nuget_api_key`: required when publishing packages from a lightweight tag
+- `nuget_user`: required when publishing packages from a lightweight tag (your nuget.org profile username, not your email address, used for OIDC Trusted Publishing)
 - `test_env_secrets`: optional newline-separated `NAME=VALUE` pairs exported to the test process only, for license keys and other credentials the tests need
 
 #### Which values must be defined
@@ -120,6 +120,7 @@ permissions:
   checks: write
   contents: read
   pull-requests: read
+  id-token: write
 
 jobs:
   build:
@@ -141,7 +142,7 @@ jobs:
       deterministic_build: true
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      nuget_api_key: ${{ secrets.NUGET_API_KEY }}
+      nuget_user: ${{ secrets.NUGET_USER }}
 ```
 
 #### How to reference the reusable workflow
@@ -151,6 +152,7 @@ jobs:
 - pass tokens and credentials in `secrets:`
 - do not add a separate checkout step in the calling job unless you have another job outside this reusable workflow that needs it
 - keep `checks: write` permission if you want published TRX test results to appear in GitHub checks
+- keep `id-token: write` permission so NuGet Trusted Publishing can request a GitHub OIDC token when publishing from a lightweight tag
 
 - for consumers, prefer `@v1` over `@main` so you can ship backward-compatible updates safely
 
@@ -173,7 +175,7 @@ jobs:
       use_global_json: true
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      nuget_api_key: ${{ secrets.NUGET_API_KEY }}
+      nuget_user: ${{ secrets.NUGET_USER }}
 ```
 
 #### Test and coverage reporting
@@ -294,12 +296,12 @@ The reusable workflow itself receives values through `with:` inputs and `secrets
 ### 🔐 Organization secrets
 Use organization secrets for sensitive values shared across multiple repositories:
 - `SONAR_TOKEN` if the same SonarQube token is used across repositories
-- `NUGET_API_KEY` if the same publishing key is shared across repositories
+- `NUGET_USER` if the same nuget.org profile username is used across repositories for Trusted Publishing
 
 ### 🔒 Repository secrets
 Use repository secrets when a sensitive value is repo-specific:
 - `SONAR_TOKEN` if each repository uses a different SonarQube token/project setup
-- `NUGET_API_KEY` if each repository publishes to its own feed or uses a separate API key
+- `NUGET_USER` if each repository publishes under a different nuget.org profile username
 
 ### ⚙️ Repository variables
 Use repository variables for non-sensitive workflow inputs:

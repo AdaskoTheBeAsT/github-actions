@@ -49,7 +49,8 @@ on:
         type: string
         default: auto
       run_resharper_inspectcode:
-        description: When true, install and run JetBrains ReSharper InspectCode for
+        description:
+          When true, install and run JetBrains ReSharper InspectCode for
           non-tag builds
         required: false
         type: boolean
@@ -60,7 +61,8 @@ on:
         type: boolean
         default: true
       publish_coverage_report:
-        description: When true, generate and publish the coverage HTML artifact and
+        description:
+          When true, generate and publish the coverage HTML artifact and
           workflow summary
         required: false
         type: boolean
@@ -173,9 +175,9 @@ on:
     secrets:
       sonar_token:
         required: false
-      nuget_api_key:
-        required: false
       test_env_secrets:
+        required: false
+      nuget_user:
         required: false
 
 permissions:
@@ -183,6 +185,7 @@ permissions:
   contents: read
   issues: write
   pull-requests: write
+  id-token: write # enable GitHub OIDC token issuance for this job
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -298,7 +301,8 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/resharper-tools
-          key: ${{ runner.os }}-resharper-tools-${{ steps.tool_versions.outputs.resharper
+          key:
+            ${{ runner.os }}-resharper-tools-${{ steps.tool_versions.outputs.resharper
             }}-${{ inputs.tool_cache_salt }}
           restore-keys: ${{ runner.os }}-resharper-tools-${{
             steps.tool_versions.outputs.resharper }}-${{ inputs.tool_cache_salt }}
@@ -522,7 +526,8 @@ jobs:
             ${{ env.TEST_RESULTS_DIRECTORY }}/**/*.trx
 
       - name: Generate coverage report
-        if: always() && inputs.publish_coverage_report && hashFiles('coverage.xml') !=
+        if:
+          always() && inputs.publish_coverage_report && hashFiles('coverage.xml') !=
           ''
         shell: pwsh
         run: |
@@ -535,7 +540,8 @@ jobs:
             -reporttypes:"Html;MarkdownSummaryGithub"
 
       - name: Upload coverage report artifact
-        if: always() && inputs.publish_coverage_report && hashFiles('coverage.xml') !=
+        if:
+          always() && inputs.publish_coverage_report && hashFiles('coverage.xml') !=
           ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
@@ -543,7 +549,8 @@ jobs:
           path: ${{ env.COVERAGE_REPORT_DIRECTORY }}
 
       - name: Add coverage summary to workflow summary
-        if: always() && inputs.publish_coverage_report && hashFiles('coverage.xml') !=
+        if:
+          always() && inputs.publish_coverage_report && hashFiles('coverage.xml') !=
           ''
         shell: pwsh
         run: |
@@ -560,10 +567,10 @@ jobs:
         if: steps.lightweight_tag.outputs.is_lightweight_tag == 'true'
         shell: pwsh
         env:
-          NUGET_API_KEY: ${{ secrets.nuget_api_key }}
+          NUGET_USER: ${{ secrets.nuget_user }}
         run: |
-          if ([string]::IsNullOrWhiteSpace($env:NUGET_API_KEY)) {
-            throw "Secret 'nuget_api_key' is required when publishing packages from a lightweight tag."
+          if ([string]::IsNullOrWhiteSpace($env:NUGET_USER)) {
+            throw "Secret 'nuget_user' is required when publishing packages from a lightweight tag."
           }
 
       - name: Build solution in Release for packaging
@@ -588,10 +595,17 @@ jobs:
             --configuration Release `
             -o $outputDirectory
 
+      - name: NuGet login (OIDC -> temp API key)
+        if: steps.lightweight_tag.outputs.is_lightweight_tag == 'true'
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.nuget_user }}
+
       - name: Publish NuGet packages
         if: steps.lightweight_tag.outputs.is_lightweight_tag == 'true'
         uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/publish-nuget-packages@v1
         with:
           package_output_directory: ${{ inputs.package_output_directory }}
           nuget_source_url: ${{ inputs.nuget_source_url }}
-          nuget_api_key: ${{ secrets.nuget_api_key }}
+          nuget_api_key: ${{ steps.login.outputs.NUGET_API_KEY }}
