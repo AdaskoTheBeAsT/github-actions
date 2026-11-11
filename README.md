@@ -80,7 +80,7 @@ This workflow performs its own `actions/checkout`, so the calling workflow does 
 *(Note: `NUGET_USER` is passed to the calling workflow's `publish` job rather than to `dotnet-build-sonarqube-nuget.yml`; see below.)*
 
 #### NuGet.org Trusted Publishing limitation with reusable workflows
-NuGet.org OIDC Trusted Publishing **cannot** be executed directly inside a cross-repository reusable workflow (`uses: AdaskoTheBeAsT/github-actions/.github/workflows/...@main`).
+NuGet.org OIDC Trusted Publishing **cannot** be executed directly inside a cross-repository reusable workflow (`uses: AdaskoTheBeAsT/github-actions/.github/workflows/...@v2`).
 
 When `NuGet/login` runs inside a cross-repository reusable workflow, GitHub sets two different repository identities on the OIDC token:
 - `repository`: `<Owner>/<ConsumerRepo>` (the repository that triggered the run)
@@ -92,7 +92,7 @@ NuGet.org's token exchange endpoint (`https://www.nuget.org/api/v2/token`) requi
 
 To work around this NuGet.org limitation while keeping build and publish logic centralized:
 1. `dotnet-build-sonarqube-nuget.yml` packs all packable projects in the solution (`.nupkg` and `.snupkg`) on lightweight tags, uploads them as a workflow artifact (`nuget-packages` by default), and exposes `is_lightweight_tag` and `nuget_artifact_name` outputs.
-2. Your repository's workflow defines a small `publish` job (`runs-on:` + `steps:`) with `id-token: write` that invokes the step-level composite action `AdaskoTheBeAsT/github-actions/.github/actions/dotnet/publish-nuget-packages@main`. Because a composite action runs inside the caller's own job, `job_workflow_ref` points to `<Owner>/<ConsumerRepo>/.github/workflows/<your-workflow>.yml` and satisfies NuGet.org's policy check.
+2. Your repository's workflow defines a small `publish` job (`runs-on:` + `steps:`) with `id-token: write` that invokes the step-level composite action `AdaskoTheBeAsT/github-actions/.github/actions/dotnet/publish-nuget-packages@v2`. Because a composite action runs inside the caller's own job, `job_workflow_ref` points to `<Owner>/<ConsumerRepo>/.github/workflows/<your-workflow>.yml` and satisfies NuGet.org's policy check.
 3. On **nuget.org → Trusted Publishing**, configure your policy for the consuming repository:
    - **Repository Owner**: `<Owner>`
    - **Repository**: `<ConsumerRepo>`
@@ -158,7 +158,7 @@ permissions:
 
 jobs:
   build:
-    uses: AdaskoTheBeAsT/github-actions/.github/workflows/dotnet-build-sonarqube-nuget.yml@main
+    uses: AdaskoTheBeAsT/github-actions/.github/workflows/dotnet-build-sonarqube-nuget.yml@v2
     with:
       solution_name: ${{ vars.SOLUTION_NAME }}
       runs_on: ${{ vars.RUNS_ON }}
@@ -186,7 +186,7 @@ jobs:
       id-token: write
     steps:
       - name: Publish NuGet packages
-        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/publish-nuget-packages@main
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/publish-nuget-packages@v2
         with:
           artifact_name: ${{ needs.build.outputs.nuget_artifact_name }}
           nuget_user: ${{ secrets.NUGET_USER }}
@@ -195,7 +195,7 @@ jobs:
 #### How to reference the reusable workflow
 - use `uses: AdaskoTheBeAsT/github-actions/.github/workflows/dotnet-build-sonarqube-nuget.yml@<ref>` for the `build` job
 - add a `publish` job in the same caller workflow (`needs: build`, `if: needs.build.outputs.is_lightweight_tag == 'true'`) that calls `AdaskoTheBeAsT/github-actions/.github/actions/dotnet/publish-nuget-packages@<ref>`
-- replace `<ref>` with a branch, tag, or commit SHA such as `main`, `v2`, `v2.0.0`, or a pinned SHA
+- replace `<ref>` with a branch, tag, or commit SHA such as `v2`, `v2.0.0`, or a pinned SHA
 - pass non-sensitive values in `with:`
 - pass `sonar_token` (and optional `test_env_secrets`) in `secrets:` on `build`, and pass `NUGET_USER` to `publish`
 - neither `build` nor `publish` needs a separate `actions/checkout` step (`build` checks out the repository itself, and `publish` downloads the packed NuGet artifact directly)
@@ -207,7 +207,7 @@ jobs:
 ```yaml
 jobs:
   build:
-    uses: AdaskoTheBeAsT/github-actions/.github/workflows/dotnet-build-sonarqube-nuget.yml@main
+    uses: AdaskoTheBeAsT/github-actions/.github/workflows/dotnet-build-sonarqube-nuget.yml@v2
     with:
       solution_name: ${{ vars.SOLUTION_NAME }}
       runs_on: ${{ vars.RUNS_ON }}
@@ -232,7 +232,7 @@ jobs:
       id-token: write
     steps:
       - name: Publish NuGet packages
-        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/publish-nuget-packages@main
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/publish-nuget-packages@v2
         with:
           artifact_name: ${{ needs.build.outputs.nuget_artifact_name }}
           nuget_user: ${{ secrets.NUGET_USER }}
@@ -265,7 +265,7 @@ Some test suites need extra environment variables at runtime, for example a comm
 ```yaml
 jobs:
   build:
-    uses: AdaskoTheBeAsT/github-actions/.github/workflows/dotnet-build-sonarqube-nuget.yml@main
+    uses: AdaskoTheBeAsT/github-actions/.github/workflows/dotnet-build-sonarqube-nuget.yml@v2
     with:
       solution_name: ${{ vars.SOLUTION_NAME }}
       sonar_project_key: ${{ vars.SONAR_PROJECT_KEY }}

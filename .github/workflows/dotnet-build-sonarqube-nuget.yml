@@ -350,11 +350,11 @@ jobs:
 
       - name: Detect lightweight tag
         id: lightweight_tag
-        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/detect-lightweight-tag@main
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/detect-lightweight-tag@v2
 
       - name: Setup dotnet
         id: setup_dotnet
-        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/setup-dotnet-sdks@main
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/setup-dotnet-sdks@v2
         with:
           dotnet_versions: ${{ inputs.dotnet_versions }}
           use_global_json: ${{ inputs.use_global_json }}
@@ -372,7 +372,7 @@ jobs:
       - name: Apply tag version
         id: apply_version
         if: steps.lightweight_tag.outputs.is_lightweight_tag == 'true'
-        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/set-directory-build-props-version-from-tag@main
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/set-directory-build-props-version-from-tag@v2
         with:
           tag: ${{ github.ref_name }}
           strip_v_prefix: ${{ inputs.strip_v_prefix }}
@@ -447,7 +447,7 @@ jobs:
           dotnet restore "${{ inputs.solution_name }}"
 
       - name: Start Sonar analysis
-        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/start-sonarqube-analysis@main
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/start-sonarqube-analysis@v2
         with:
           sonar_provider: ${{ inputs.sonar_provider }}
           project_key: ${{ inputs.sonar_project_key }}
@@ -485,7 +485,7 @@ jobs:
             @strictArgs
 
       - name: Test solution
-        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/test-with-coverage@main
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/test-with-coverage@v2
         with:
           solution_name: ${{ inputs.solution_name }}
           coverage_settings_file: ${{ inputs.coverage_settings_file }}
