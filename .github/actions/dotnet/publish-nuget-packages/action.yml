@@ -1,26 +1,82 @@
 name: Publish NuGet Packages
-description: Publish generated NuGet packages while skipping symbol packages.
+description: >-
+  Optionally download a packed NuGet workflow artifact, exchange a GitHub OIDC
+  token for a short-lived NuGet.org API key (Trusted Publishing), and publish
+  regular NuGet packages while skipping standalone symbol packages.
 
 inputs:
   package_output_directory:
-    description: Directory containing generated NuGet packages
+    description: Directory containing (or receiving downloaded) generated NuGet packages
     required: false
     default: artifacts/nuget
+  artifact_name:
+    description: >-
+      Optional workflow artifact name to download into package_output_directory
+      before publishing (for example 'nuget-packages' uploaded by the reusable
+      build workflow). Leave empty when packages already exist locally.
+    required: false
+    default: ""
   nuget_source_url:
     description: NuGet feed URL
-    required: true
+    required: false
+    default: https://api.nuget.org/v3/index.json
+  nuget_user:
+    description: >-
+      NuGet.org profile username (not email address) used with NuGet/login for
+      OIDC Trusted Publishing. Provide either nuget_user or nuget_api_key.
+    required: false
+    default: ""
   nuget_api_key:
-    description: NuGet API key
-    required: true
+    description: >-
+      Explicit NuGet API key for feeds that do not use NuGet.org OIDC Trusted
+      Publishing. Provide either nuget_user or nuget_api_key.
+    required: false
+    default: ""
+  nuget_token_service_url:
+    description: Token exchange endpoint URL passed to NuGet/login when nuget_user is used
+    required: false
+    default: https://www.nuget.org/api/v2/token
+  nuget_audience:
+    description: OIDC audience requested by NuGet/login when nuget_user is used
+    required: false
+    default: https://www.nuget.org
 
 runs:
   using: composite
   steps:
+    - name: Validate NuGet publish inputs
+      id: validate
+      shell: pwsh
+      env:
+        INPUT_NUGET_API_KEY: ${{ inputs.nuget_api_key }}
+      run: |
+        & "${{ github.action_path }}/validate-publish-inputs.ps1" `
+          -PackageOutputDirectory "${{ inputs.package_output_directory }}" `
+          -ArtifactName "${{ inputs.artifact_name }}" `
+          -NugetSourceUrl "${{ inputs.nuget_source_url }}" `
+          -NugetUser "${{ inputs.nuget_user }}"
+
+    - name: Download NuGet packages artifact
+      if: steps.validate.outputs.download_artifact == 'true'
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      with:
+        name: ${{ steps.validate.outputs.artifact_name }}
+        path: ${{ inputs.package_output_directory }}
+
+    - name: NuGet login (OIDC -> temp API key)
+      if: steps.validate.outputs.use_trusted_publishing == 'true'
+      id: login
+      uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+      with:
+        user: ${{ steps.validate.outputs.nuget_user }}
+        token-service-url: ${{ inputs.nuget_token_service_url }}
+        audience: ${{ inputs.nuget_audience }}
+
     - name: Publish NuGet packages
       shell: pwsh
       working-directory: ${{ github.workspace }}
       env:
-        NUGET_API_KEY: ${{ inputs.nuget_api_key }}
+        NUGET_API_KEY: ${{ steps.validate.outputs.use_trusted_publishing == 'true' && steps.login.outputs.NUGET_API_KEY || inputs.nuget_api_key }}
       run: |
         & "${{ github.action_path }}/publish-nuget-packages.ps1" `
           -PackageOutputDirectory "${{ inputs.package_output_directory }}" `

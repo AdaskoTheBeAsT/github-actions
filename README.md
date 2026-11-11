@@ -9,7 +9,7 @@ These workflows and composite actions help you ship .NET libraries with:
 - coverage collection
 - SonarCloud or SonarQube analysis
 - automatic versioning from git tags
-- NuGet packaging and publishing
+- NuGet packaging and publishing (single or multiple packages per repository)
 
 In short: less copy-paste, more shipping.
 
@@ -29,14 +29,14 @@ This workflow performs its own `actions/checkout`, so the calling workflow does 
 - ✅ runs tests with coverage and publishes TRX test results
 - 📊 generates a coverage HTML artifact and workflow summary
 - 🔍 runs SonarCloud or SonarQube analysis
-- 📤 packs and publishes NuGet packages for lightweight tags
+- 📤 packs all packable NuGet projects in the solution (`.nupkg` and `.snupkg`) and uploads them as a workflow artifact for lightweight tags
 
 #### How it behaves
 - `pull_request` → build, test, coverage, ReSharper inspect, Sonar pull request analysis
 - branch build → build, test, coverage, ReSharper inspect, Sonar branch analysis
 - tag build → build, test, coverage, Sonar versioned analysis using `sonar.projectVersion`
-- lightweight tag → build, test, pack, publish NuGet packages
-- annotated tag → skips the package publish path
+- lightweight tag → build, test, Sonar versioned analysis, pack NuGet packages, upload the package artifact (`nuget-packages` by default), and expose workflow outputs for the caller's `publish` job
+- annotated tag → skips the package pack and upload path
 
 #### Inputs
 - `solution_name` (required): solution to restore, build, test, and pack
@@ -55,8 +55,8 @@ This workflow performs its own `actions/checkout`, so the calling workflow does 
 - `sonar_host_url`: Sonar server URL, defaults to `https://sonarcloud.io`
 - `sonar_settings_file`: path to `SonarQube.Analysis.xml`
 - `coverage_settings_file`: path to `coverage.settings.xml`
-- `package_output_directory`: pack output directory
-- `nuget_source_url`: package feed URL
+- `package_output_directory`: pack output directory, defaults to `artifacts/nuget`
+- `nuget_artifact_name`: workflow artifact name uploaded when lightweight-tag NuGet packages are packed, defaults to `nuget-packages`
 - `strip_v_prefix`: strips `v`/`V` from tags like `v1.2.3`
 - `strict_build`: when `true` (default), runs `dotnet build` with `--no-incremental` and `-t:Rebuild` to defeat incremental caching and force every MSBuild target to rerun; disables the class of regressions that only surface after a clean build
 - `deterministic_build`: when `true` (default), sets `ContinuousIntegrationBuild=true` as a job-level environment variable so every `dotnet restore`, `build`, `test`, and `pack` call produces deterministic output (stable PDBs, SourceLink paths, no machine-specific timestamps or paths)
@@ -68,10 +68,43 @@ This workflow performs its own `actions/checkout`, so the calling workflow does 
 - `test_frameworks`: comma-separated list of target frameworks to run tests against, for example `net8.0,net9.0`; empty (the default) runs every TFM in the solution
 - `test_env`: newline-separated `NAME=VALUE` pairs exported to the test process only; use it for non-sensitive test configuration and see [Passing extra environment variables to the test step](#passing-extra-environment-variables-to-the-test-step)
 
+#### Outputs
+- `is_lightweight_tag`: `'true'` when the workflow ran on a lightweight tag and packed NuGet packages; otherwise `'false'`
+- `package_version`: version written from the lightweight tag into `Directory.Build.props` (empty when `is_lightweight_tag` is not `'true'`)
+- `nuget_artifact_name`: name of the uploaded NuGet package artifact when `is_lightweight_tag` is `'true'` (empty otherwise)
+
 #### Required workflow secrets
-- `sonar_token`: required for pull request and branch builds
-- `nuget_user`: required when publishing packages from a lightweight tag (your nuget.org profile username, not your email address, used for OIDC Trusted Publishing)
+- `sonar_token`: required for pull request, branch, and tag builds
 - `test_env_secrets`: optional newline-separated `NAME=VALUE` pairs exported to the test process only, for license keys and other credentials the tests need
+
+*(Note: `NUGET_USER` is passed to the calling workflow's `publish` job rather than to `dotnet-build-sonarqube-nuget.yml`; see below.)*
+
+#### NuGet.org Trusted Publishing limitation with reusable workflows
+NuGet.org OIDC Trusted Publishing **cannot** be executed directly inside a cross-repository reusable workflow (`uses: AdaskoTheBeAsT/github-actions/.github/workflows/...@main`).
+
+When `NuGet/login` runs inside a cross-repository reusable workflow, GitHub sets two different repository identities on the OIDC token:
+- `repository`: `<Owner>/<ConsumerRepo>` (the repository that triggered the run)
+- `job_workflow_ref`: `AdaskoTheBeAsT/github-actions/.github/workflows/dotnet-build-sonarqube-nuget.yml@...` (the shared reusable workflow executing the job)
+
+NuGet.org's token exchange endpoint (`https://www.nuget.org/api/v2/token`) requires **both** `repository` and `job_workflow_ref` to belong to the repository configured in the Trusted Publishing policy, so calling `NuGet/login` from a reusable workflow in another repository fails with `HTTP 401`:
+`Claim 'job_workflow_ref' has value 'AdaskoTheBeAsT/github-actions/.github/workflows/...' which does not start with <Owner>/<ConsumerRepo>/.github/workflows/.`
+(Generating the short-lived API key in a caller job and passing it into the reusable workflow also does not work because GitHub Actions masks the key as a secret and strips secret values from job outputs.)
+
+To work around this NuGet.org limitation while keeping build and publish logic centralized:
+1. `dotnet-build-sonarqube-nuget.yml` packs all packable projects in the solution (`.nupkg` and `.snupkg`) on lightweight tags, uploads them as a workflow artifact (`nuget-packages` by default), and exposes `is_lightweight_tag` and `nuget_artifact_name` outputs.
+2. Your repository's workflow defines a small `publish` job (`runs-on:` + `steps:`) with `id-token: write` that invokes the step-level composite action `AdaskoTheBeAsT/github-actions/.github/actions/dotnet/publish-nuget-packages@main`. Because a composite action runs inside the caller's own job, `job_workflow_ref` points to `<Owner>/<ConsumerRepo>/.github/workflows/<your-workflow>.yml` and satisfies NuGet.org's policy check.
+3. On **nuget.org → Trusted Publishing**, configure your policy for the consuming repository:
+   - **Repository Owner**: `<Owner>`
+   - **Repository**: `<ConsumerRepo>`
+   - **Workflow File**: `<your-workflow>.yml` (file name only, for example `ci.yml`, without `.github/workflows/`)
+   - **Environment** *(optional)*: leave empty unless you set `environment:` on the `publish` job
+   - **Policy Scopes**: select the target package ID(s) or specify a glob pattern (for example `AdaskoTheBeAsT.Interop.*`). Enable new-package creation on the scope if the repository can publish new package IDs.
+
+#### Publishing multiple NuGet packages from one repository
+A single repository and solution can produce and publish multiple NuGet packages in one tag run:
+- `dotnet pack` packs every packable project (`IsPackable != false`) in `solution_name` using the tag version written to the root `Directory.Build.props`, placing all `.nupkg` and `.snupkg` files into `package_output_directory` and uploading them in one workflow artifact.
+- `publish-nuget-packages` downloads that artifact once, runs `NuGet/login` once to obtain a single short-lived API key (valid for 1 hour), and pushes every regular `.nupkg` in the directory with `--skip-duplicate` (while `dotnet nuget push` automatically uploads each package's matching `.snupkg` symbols).
+- On NuGet.org, cover all packages produced by that repository in the policy's **Policy Scopes** (either by selecting multiple packages or using a glob pattern such as `MyPrefix.*`).
 
 #### Which values must be defined
 You do not need to define every repository variable. Some inputs already have defaults in the reusable workflow.
@@ -95,7 +128,8 @@ You do not need to define every repository variable. Some inputs already have de
 - `SONAR_SETTINGS_FILE` → defaults to `SonarQube.Analysis.xml`
 - `COVERAGE_SETTINGS_FILE` → defaults to `coverage.settings.xml`
 - `PACKAGE_OUTPUT_DIRECTORY` → defaults to `artifacts/nuget`
-- `NUGET_SOURCE_URL` → defaults to `https://api.nuget.org/v3/index.json`
+- `NUGET_ARTIFACT_NAME` → defaults to `nuget-packages`
+- `NUGET_SOURCE_URL` → defaults to `https://api.nuget.org/v3/index.json` (on `.github/actions/dotnet/publish-nuget-packages`)
 - `STRIP_V_PREFIX` → defaults to `true`
 - `STRICT_BUILD` → defaults to `true`
 - `DETERMINISTIC_BUILD` → defaults to `true`
@@ -119,8 +153,8 @@ on:
 permissions:
   checks: write
   contents: read
-  pull-requests: read
-  id-token: write
+  issues: write
+  pull-requests: write
 
 jobs:
   build:
@@ -142,22 +176,37 @@ jobs:
       deterministic_build: true
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      nuget_user: ${{ secrets.NUGET_USER }}
+
+  publish:
+    needs: build
+    if: needs.build.outputs.is_lightweight_tag == 'true'
+    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Publish NuGet packages
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/publish-nuget-packages@main
+        with:
+          artifact_name: ${{ needs.build.outputs.nuget_artifact_name }}
+          nuget_user: ${{ secrets.NUGET_USER }}
 ```
 
 #### How to reference the reusable workflow
-- use `uses: AdaskoTheBeAsT/github-actions/.github/workflows/dotnet-build-sonarqube-nuget.yml@<ref>`
-- replace `<ref>` with a branch, tag, or commit SHA such as `main`, `v1.0.0`, or a pinned SHA
+- use `uses: AdaskoTheBeAsT/github-actions/.github/workflows/dotnet-build-sonarqube-nuget.yml@<ref>` for the `build` job
+- add a `publish` job in the same caller workflow (`needs: build`, `if: needs.build.outputs.is_lightweight_tag == 'true'`) that calls `AdaskoTheBeAsT/github-actions/.github/actions/dotnet/publish-nuget-packages@<ref>`
+- replace `<ref>` with a branch, tag, or commit SHA such as `main`, `v2`, `v2.0.0`, or a pinned SHA
 - pass non-sensitive values in `with:`
-- pass tokens and credentials in `secrets:`
-- do not add a separate checkout step in the calling job unless you have another job outside this reusable workflow that needs it
-- keep `checks: write` permission if you want published TRX test results to appear in GitHub checks
-- keep `id-token: write` permission so NuGet Trusted Publishing can request a GitHub OIDC token when publishing from a lightweight tag
+- pass `sonar_token` (and optional `test_env_secrets`) in `secrets:` on `build`, and pass `NUGET_USER` to `publish`
+- neither `build` nor `publish` needs a separate `actions/checkout` step (`build` checks out the repository itself, and `publish` downloads the packed NuGet artifact directly)
+- keep `checks: write`, `issues: write`, and `pull-requests: write` permissions on the workflow (or `build` job) so published TRX test results and annotations work
+- grant `id-token: write` permission on the `publish` job so `NuGet/login` can request a GitHub OIDC token grounded in the calling workflow's `job_workflow_ref`
+- for consumers, prefer `@v2` over `@main` so you can ship backward-compatible updates safely
 
 #### Minimal reference example
 ```yaml
 jobs:
-  ci:
+  build:
     uses: AdaskoTheBeAsT/github-actions/.github/workflows/dotnet-build-sonarqube-nuget.yml@main
     with:
       solution_name: ${{ vars.SOLUTION_NAME }}
@@ -173,7 +222,20 @@ jobs:
       use_global_json: true
     secrets:
       sonar_token: ${{ secrets.SONAR_TOKEN }}
-      nuget_user: ${{ secrets.NUGET_USER }}
+
+  publish:
+    needs: build
+    if: needs.build.outputs.is_lightweight_tag == 'true'
+    runs-on: ${{ vars.RUNS_ON || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Publish NuGet packages
+        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/publish-nuget-packages@main
+        with:
+          artifact_name: ${{ needs.build.outputs.nuget_artifact_name }}
+          nuget_user: ${{ secrets.NUGET_USER }}
 ```
 
 #### Test and coverage reporting
@@ -202,7 +264,7 @@ Some test suites need extra environment variables at runtime, for example a comm
 
 ```yaml
 jobs:
-  ci:
+  build:
     uses: AdaskoTheBeAsT/github-actions/.github/workflows/dotnet-build-sonarqube-nuget.yml@main
     with:
       solution_name: ${{ vars.SOLUTION_NAME }}
@@ -287,9 +349,21 @@ Installs one or more .NET SDK versions. Supports explicit SDK versions and/or th
 ### 🔢 `.github/actions/dotnet/set-directory-build-props-version-from-tag`
 Writes the tag version into the root `Directory.Build.props` `<Version>` element and returns the resolved version.
 
+### 📤 `.github/actions/dotnet/publish-nuget-packages`
+Publishes all regular `.nupkg` packages in `package_output_directory` (skipping standalone `.snupkg` and `.symbols.nupkg` files so `dotnet nuget push` pushes sibling `.snupkg` symbols automatically). Designed to run inside a job defined in the calling repository's workflow so GitHub's `job_workflow_ref` OIDC claim matches NuGet.org's Trusted Publishing policy.
+
+#### Inputs
+- `package_output_directory`: directory containing (or receiving downloaded) NuGet packages, defaults to `artifacts/nuget`
+- `artifact_name`: optional workflow artifact name to download into `package_output_directory` before publishing (for example `${{ needs.build.outputs.nuget_artifact_name }}`), defaults to empty
+- `nuget_source_url`: NuGet feed URL, defaults to `https://api.nuget.org/v3/index.json`
+- `nuget_user`: NuGet.org profile username (not email address) used with `NuGet/login` for OIDC Trusted Publishing; provide either `nuget_user` or `nuget_api_key`
+- `nuget_api_key`: explicit NuGet API key for feeds that do not use NuGet.org OIDC Trusted Publishing; provide either `nuget_user` or `nuget_api_key`
+- `nuget_token_service_url`: token exchange URL passed to `NuGet/login`, defaults to `https://www.nuget.org/api/v2/token`
+- `nuget_audience`: OIDC audience requested by `NuGet/login`, defaults to `https://www.nuget.org`
+
 ## Secrets and variables setup
 
-The reusable workflow itself receives values through `with:` inputs and `secrets:` mappings from the calling repository.
+The reusable workflow receives build and Sonar inputs through `with:` and `secrets:`, while the caller workflow's `publish` job passes `NUGET_USER` to `.github/actions/dotnet/publish-nuget-packages`.
 
 ### 🔐 Organization secrets
 Use organization secrets for sensitive values shared across multiple repositories:
@@ -319,6 +393,7 @@ Use repository variables for non-sensitive workflow inputs:
 - `SONAR_SETTINGS_FILE`
 - `COVERAGE_SETTINGS_FILE`
 - `PACKAGE_OUTPUT_DIRECTORY`
+- `NUGET_ARTIFACT_NAME`
 - `NUGET_SOURCE_URL`
 - `STRIP_V_PREFIX`
 - `STRICT_BUILD`

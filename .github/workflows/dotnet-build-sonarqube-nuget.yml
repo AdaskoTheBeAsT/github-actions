@@ -87,11 +87,14 @@ on:
         required: false
         type: string
         default: artifacts/nuget
-      nuget_source_url:
-        description: NuGet feed URL used for package publishing
+      nuget_artifact_name:
+        description: >-
+          Name of the workflow artifact uploaded when NuGet packages are packed
+          on a lightweight tag. Pass this artifact name to a publish job defined
+          in the calling workflow for NuGet.org Trusted Publishing.
         required: false
         type: string
-        default: https://api.nuget.org/v3/index.json
+        default: nuget-packages
       strip_v_prefix:
         description: When true, strip a leading v or V from the git tag version
         required: false
@@ -177,15 +180,28 @@ on:
         required: false
       test_env_secrets:
         required: false
-      nuget_user:
-        required: false
+    outputs:
+      is_lightweight_tag:
+        description: >-
+          'true' when the build ran for a lightweight git tag and packed NuGet
+          packages; otherwise 'false'
+        value: ${{ jobs.build_test_scan_publish.outputs.is_lightweight_tag }}
+      package_version:
+        description: >-
+          Version written from the lightweight tag to Directory.Build.props
+          (empty for non-lightweight-tag builds)
+        value: ${{ jobs.build_test_scan_publish.outputs.package_version }}
+      nuget_artifact_name:
+        description: >-
+          Workflow artifact name containing packed NuGet packages when
+          is_lightweight_tag is 'true' (empty otherwise)
+        value: ${{ jobs.build_test_scan_publish.outputs.nuget_artifact_name }}
 
 permissions:
   checks: write
   contents: read
   issues: write
   pull-requests: write
-  id-token: write # enable GitHub OIDC token issuance for this job
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -194,6 +210,10 @@ concurrency:
 jobs:
   build_test_scan_publish:
     runs-on: ${{ inputs.runs_on }}
+    outputs:
+      is_lightweight_tag: ${{ steps.lightweight_tag.outputs.is_lightweight_tag }}
+      package_version: ${{ steps.apply_version.outputs.version }}
+      nuget_artifact_name: ${{ steps.lightweight_tag.outputs.is_lightweight_tag == 'true' && inputs.nuget_artifact_name || '' }}
     env:
       ContinuousIntegrationBuild: ${{ inputs.deterministic_build }}
       COVERAGE_REPORT_DIRECTORY: coverage-report
@@ -563,16 +583,6 @@ jobs:
 
           Get-Content -LiteralPath $summaryFile.FullName | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
 
-      - name: Validate NuGet publish configuration
-        if: steps.lightweight_tag.outputs.is_lightweight_tag == 'true'
-        shell: pwsh
-        env:
-          NUGET_USER: ${{ secrets.nuget_user }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:NUGET_USER)) {
-            throw "Secret 'nuget_user' is required when publishing packages from a lightweight tag."
-          }
-
       - name: Build solution in Release for packaging
         if: steps.lightweight_tag.outputs.is_lightweight_tag == 'true'
         shell: pwsh
@@ -594,18 +604,23 @@ jobs:
             --no-build `
             --configuration Release `
             -o $outputDirectory
+          if ($LASTEXITCODE -ne 0) {
+            throw "dotnet pack failed with exit code $LASTEXITCODE."
+          }
 
-      - name: NuGet login (OIDC -> temp API key)
-        if: steps.lightweight_tag.outputs.is_lightweight_tag == 'true'
-        id: login
-        uses: NuGet/login@v1
-        with:
-          user: ${{ secrets.nuget_user }}
+          $packages = @(Get-ChildItem -Path $outputDirectory -Filter "*.nupkg" -File | Where-Object {
+            $_.Name -notlike "*.snupkg" -and $_.Name -notlike "*.symbols.nupkg"
+          })
 
-      - name: Publish NuGet packages
+          if ($packages.Count -eq 0) {
+            throw "No NuGet packages were produced in '$outputDirectory'."
+          }
+
+      - name: Upload NuGet packages artifact
+        id: upload_nuget_packages
         if: steps.lightweight_tag.outputs.is_lightweight_tag == 'true'
-        uses: AdaskoTheBeAsT/github-actions/.github/actions/dotnet/publish-nuget-packages@main
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          package_output_directory: ${{ inputs.package_output_directory }}
-          nuget_source_url: ${{ inputs.nuget_source_url }}
-          nuget_api_key: ${{ steps.login.outputs.NUGET_API_KEY }}
+          name: ${{ inputs.nuget_artifact_name }}
+          path: ${{ inputs.package_output_directory }}
+          if-no-files-found: error
