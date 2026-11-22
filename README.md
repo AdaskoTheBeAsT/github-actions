@@ -49,7 +49,8 @@ This workflow performs its own `actions/checkout`, so the calling workflow does 
 - `show_dotnet_info`: run `dotnet --info`
 - `runner_type`: `auto` (default), `vstest`, or `mtp`; auto selects MTP when
   root `global.json` sets `test.runner` to `Microsoft.Testing.Platform`
-- `run_resharper_inspectcode`: install and run ReSharper InspectCode and include its report in Sonar analysis
+- `run_resharper_inspectcode`: run ReSharper InspectCode on .NET source and view files and include its XML report in Sonar analysis. The inspection excludes `bin`, `obj`, and `.nuget/packages`; InspectCode can still load dependencies and other files to understand the solution.
+- `resharper_project_filter`: optional ReSharper project name or wildcard, for example `AdaskoTheBeAsT.Interop.COM` to inspect the library without its test project. Leave empty to inspect source across the solution.
 - `publish_test_results`: publish TRX results to GitHub checks
 - `publish_coverage_report`: generate and publish coverage HTML and workflow summary
 - `sonar_host_url`: Sonar server URL, defaults to `https://sonarcloud.io`
