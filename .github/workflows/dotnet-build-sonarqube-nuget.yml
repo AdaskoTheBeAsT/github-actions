@@ -49,12 +49,17 @@ on:
         type: string
         default: auto
       run_resharper_inspectcode:
-        description:
-          When true, install and run JetBrains ReSharper InspectCode for
-          non-tag builds
+        description: When true, run JetBrains ReSharper InspectCode on .NET source
         required: false
         type: boolean
         default: true
+      resharper_project_filter:
+        description: >-
+          Optional ReSharper project name or wildcard, for example MyLibrary.
+          Leave empty to inspect source across the solution.
+        required: false
+        type: string
+        default: ""
       publish_test_results:
         description: When true, publish TRX test results to GitHub checks
         required: false
@@ -499,15 +504,23 @@ jobs:
         if: inputs.run_resharper_inspectcode
         continue-on-error: true
         shell: pwsh
+        env:
+          SOLUTION_NAME: ${{ inputs.solution_name }}
+          RESHARPER_PROJECT_FILTER: ${{ inputs.resharper_project_filter }}
         run: |
-          $solutionPath = Join-Path $env:GITHUB_WORKSPACE "${{ inputs.solution_name }}"
+          $solutionPath = Join-Path $env:GITHUB_WORKSPACE $env:SOLUTION_NAME
           $reportPath = Join-Path $env:GITHUB_WORKSPACE $env:RESHARPER_REPORT_PATH
           $inspectCodeArguments = @(
             "inspectcode"
             $solutionPath
             "-o=$reportPath"
             "--format=Xml"
+            "--include=**/*.cs;**/*.fs;**/*.fsi;**/*.vb;**/*.razor;**/*.cshtml;**/*.vbhtml;**/*.xaml;**/*.axaml"
+            "--exclude=**/bin/**;**/obj/**;**/.nuget/packages/**"
           )
+          if (-not [string]::IsNullOrWhiteSpace($env:RESHARPER_PROJECT_FILTER)) {
+            $inspectCodeArguments += "--project=$($env:RESHARPER_PROJECT_FILTER.Trim())"
+          }
 
           jb @inspectCodeArguments
 
